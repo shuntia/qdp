@@ -1,0 +1,6 @@
+[workspace]
+members = [
+    "crates/qdp",
+    "bin/qdp_host",
+]
+resolver = "2"
