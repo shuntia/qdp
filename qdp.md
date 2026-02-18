@@ -8,7 +8,39 @@
 **Scope:**
 This document specifies **only** the on-wire binary formats and the **minimum required semantics** to implement packet parsing, integrity & authenticity verification, replay protection, alert propagation, seeding, and relay heartbeats.
 
-UI behavior, panic-level logic, user interaction, and info-plane schemas are **explicitly out of scope**.
+## Purpose
+
+The current emergency alert infrastructure, CAP(Common Alert Protocol) is flexible and widely deployed, but they have many flaws including:
+- Lack of internationalization
+  - Not all people in the affected area are guaranteed to know that language.
+- One-to-one
+  - One connection means if that single connection fails, CAP will fail to reach the client.
+- Too long
+  - It may be small enough in terms of the capability of modern infrastructure, but it's too large that TCP/IP will favor to break the data up into multiple packets, and partial loss may render the whole message unusable.
+- Unbounded
+  - On systems that lack proper amounts of available memory, CAP may overwhelm the chip, given that its length is not hard-capped.
+- Concentrated
+  - Even though the networking aroud the alert origin may be robust, bottlenecks may exist at any point in between the central origin and client.
+  - Physical interruptions of the network may cause a lot of connections to fault, and may require an expensive route change.
+  - The amount of connections the origin can juggle simultaneously limits the amount of clients that can receive CAP XML alerts.
+- Complex
+  - You cannot read information from CAP XML alerts directly, avoiding indirection and full parsing of the tree.
+  - XML is hierarchical, and you need to parse the whole tree to fetch information safely.
+  - CAP is too flexible and tolerant of duplicate fields in arbitrary order.
+  - XML data transmitted by CAP is inherently unordered, requiring traversal to find a specific tag.
+  - XML is intended to be markup language for humans, and is hostile against computers.
+  - The objective of CAP should be to provide infrastructure information, not directly display raw CAP to the user. It does not make sense that the computer would be able to receive CAP but not have the software to understand what it means.
+  - Pushing multimedia through emergency pipelines increases the risk of corruption and/or incomplete messages.
+- Slow
+  - Current pull-based infrastructure for CAP provides delivery on the scale of minutes.
+  - Push-based system uses satellites and takes upwards to 45 seconds to deliver. In many situations you are indoors, thus have a high chance of missing the alert.
+- Unsecure
+  - No legitimate enforcement on signing.
+  - One could theoretically inject an unsigned CAP alert through the system and deliver nationwide panic.
+- Demanding
+  - Memory requirement is theoretically unbound due to CAP being unbound.
+  - Media interpretation requires mature, complex libraries.
+  - Realistically requires a whole OS to be running to make use of CAP.
 
 ---
 
@@ -42,6 +74,9 @@ UI behavior, panic-level logic, user interaction, and info-plane schemas are **e
 - MTU safety
   - Recommended UDP payload ≤ **1200 bytes**
 
+- Lightweight
+  - Be able to run on minimal hardware
+
 All multi-byte integers are **LITTLE-ENDIAN** unless explicitly stated.
 
 ---
@@ -71,6 +106,7 @@ qdp uses a two-level versioning scheme to distinguish wire incompatibility from 
     - define new TLV types,
     - define new `hazard_minor` values,
     - add new semantics that can be safely ignored by older implementations.
+  - However, keeping up to date is strongly recommended.
   - Receivers **MUST** ignore unknown flag bits and unknown TLV types.
 
 In short:
@@ -114,14 +150,13 @@ Advisory only.
 **Total size: 55 bytes**
 
 | Offset | Size | Field         | Type    | Description |
-|-------:|-----:|---------------|---------|-------------|
+|--------|------|---------------|---------|-------------|
 | 0x00   | 4    | magic         | u8[4]  | ASCII “QDP1” |
-| 0x04   | 1    | version_major | u8     | v1 → 1 |
-| 0x05   | 1    | version_minor | u8     | v1 → 0 |
-| 0x06   | 2    | header_len    | u16    | End of signed region |
-| 0x08   | 2    | flags         | u16    | See §3 |
-| 0x0A   | 2    | flags_ext     | u16    | MUST be 0 in v1 |
-| 0x0C   | 3    | reserved0     | u8[3]  | MUST be 0 |
+| 0x04   | 1    | version_major | u8     | v1.0 → 1 |
+| 0x05   | 1    | version_minor | u8     | v1.0 → 0 |
+| 0x06   | 2    | header_len    | u8     | End of signed region |
+| 0x0A   | 2    | flags         | u16    | See §3 |
+| 0x0C   | 2    | flags_ext     | u16    | MUST be 0 in v1 |
 | 0x0F   | 8    | timestamp_s   | u64    | Origin issue time |
 | 0x17   | 8    | origin_id     | u64    | Policy-defined label |
 | 0x1F   | 16   | event_root_id | u8[16] | Stable event ID |
@@ -139,7 +174,7 @@ Notes:
 ## 3. Flags
 
 | Bit | Name       | Meaning |
-|----:|------------|--------|
+|-----|------------|--------|
 | 0   | PROPAGATE  | Eligible for alert-plane forwarding |
 | 1   | URGENT     | Forward with priority |
 | 2   | UPDATE     | Revision of existing event |
@@ -156,12 +191,12 @@ Unknown bits MUST be ignored.
 ### 4.1 Fixed ALERT Fields
 
 | Offset | Size | Field              | Type |
-|-------:|-----:|--------------------|------|
+|--------|------|--------------------|------|
 | 0x37   | 1    | hazard_major       | u8 |
 | 0x38   | 1    | hazard_minor       | u8 |
-| 0x39   | 2    | alert_reserved0    | u16 |
+| 0x39   | 2    | measure            | u16 |
 | 0x3B   | 1    | urgency            | u8 |
-| 0x3C   | 1    | severity           | u8 |
+| 0x3C   | 1    | intensity          | u8 |
 | 0x3D   | 1    | certainty          | u8 |
 | 0x3E   | 1    | response           | u8 |
 | 0x3F   | 8    | onset_s            | u64 |
@@ -299,7 +334,7 @@ Packets are immutable; relays MUST NOT modify signed bytes.
 ### 9.4 Forwarding Strategy
 - Stateless fan-out
 - Rate-limited
-- Random jitter
+- Random optional jitter
 
 ---
 
@@ -439,7 +474,27 @@ Note: REGION_CODE is optional on-wire. If a deployment requires region constrain
 
 ---
 
-## 17. Explicitly Out of Scope
+## 17. System Requirements
+
+### 17.1 Minimum System Requirements
+
+- CPU
+  - Support for 8-bit pointer arithmetic
+- Memory
+  - At least 1024 bytes of stack space
+
+### 17.2 Recommended System Requirements
+
+- CPU
+  - Support for 16-bit pointer arithmetic
+  - Support for large-number arithmetic for Ed25519 verification
+- Memory
+  - At least 2047 bytes of stack space
+  - At least 255 byes of dynamic heap space(Vector TLV storage)
+
+---
+
+## 18. Explicitly Out of Scope
 
 - Info-plane schemas
 - Key distribution / revocation mechanisms for the Origin Registry
