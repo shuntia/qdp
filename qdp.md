@@ -6,11 +6,12 @@
 **Status:** Draft / implementable
 
 **Scope:**
-This document specifies **only** the on-wire binary formats and the **minimum required semantics** to implement packet parsing, integrity & authenticity verification, replay protection, alert propagation, seeding, and relay heartbeats.
+This document specifies **only** the on-wire binary formats and the **minimum required semantics** to implement packet parsing, integrity & authenticity verification, replay protection, alert propagation, and seeding.
 
 ## Purpose
 
 The current emergency alert infrastructure, CAP(Common Alert Protocol) is flexible and widely deployed, but they have many flaws including:
+
 - Lack of internationalization
   - Not all people in the affected area are guaranteed to know that language.
 - One-to-one
@@ -63,7 +64,7 @@ The current emergency alert infrastructure, CAP(Common Alert Protocol) is flexib
   - Allow future extensions without breaking existing implementations
 
 - Strong authenticity
-  - Alerts are valid **only** if signed by a Regional Origin key
+  - Alerts are valid **only** if signed by a Alert Origin key
   - Relay “trust” does not imply alert validity
 
 - no_std / zero-copy friendly
@@ -77,7 +78,7 @@ The current emergency alert infrastructure, CAP(Common Alert Protocol) is flexib
 - Lightweight
   - Be able to run on minimal hardware
 
-All multi-byte integers are **LITTLE-ENDIAN** unless explicitly stated.
+All multi-byte integers are **LITTLE-ENDIAN** unless explicitly stated. Little-endian was chosen for host-native efficiency on common embedded targets (ARM, x86), departing from the RFC 1700 big-endian convention.
 
 ---
 
@@ -110,79 +111,75 @@ qdp uses a two-level versioning scheme to distinguish wire incompatibility from 
   - Receivers **MUST** ignore unknown flag bits and unknown TLV types.
 
 In short:
+
 - **Major version changes break compatibility.**
 - **Minor version changes extend behavior without breaking existing implementations.**
 
-### 1.3 Signed vs Unsigned Data
-- **Signed region:** all bytes covered by the cryptographic signature.
-- **Unsigned tail:** any bytes beyond `header_len`.
-  - MUST be ignored for safety-critical decisions.
-  - MAY be logged for local diagnostics.
+### 1.3 Time
 
-### 1.4 Time
 - UNIX seconds (UTC), `u64`.
+- Method of syncing time is dependent on hardware and medium.
 
-### 1.5 Geographic Encoding
+### 1.4 Geographic Encoding
+
 Latitude and longitude are signed `i32` microdegrees (1e-6 degrees).
 
 Ranges:
-- latitude:  −90_000_000 … +90_000_000
+
+- latitude: −90_000_000 … +90_000_000
 - longitude: −180_000_000 … +180_000_000
 
-### 1.6 Distance
+### 1.5 Distance
+
 Distance is encoded as **10-meter units**:
+
 - Stored value: `radius_10m` (`u16`)
 - Real meters: `affected_radius_m = radius_10m × 10`
-Advisory only.
+- Used for propagation decisions (see §8.2)
+- A value of 0 indicates "unknown" or "see polygon TLV"
 
-### 1.7 Authority Model
+### 1.6 Authority Model
+
 - ALERT validity requires:
-  1) A valid Ed25519 signature, AND
-  2) The signing key being present and authorized in a local Origin Registry (out of scope distribution; registry format defined in §16).
+  1. A valid Ed25519 signature, AND
+  2. The signing key being present in the local Origin Registry (registry format defined in §17).
 - On-wire packets DO NOT embed public keys in v1.0.
 - The packet identifies the signing key by `origin_key_id`.
-- `origin_id` is a signed label only and MUST NOT be trusted without external policy.
 
 ---
 
 ## 2. Common Prefix (All Packets)
 
-**Total size: 55 bytes**
+**Total size: 8 bytes**
 
-| Offset | Size | Field         | Type    | Description |
-|--------|------|---------------|---------|-------------|
-| 0x00   | 4    | magic         | u8[4]  | ASCII “QDP1” |
-| 0x04   | 1    | version_major | u8     | v1.0 → 1 |
-| 0x05   | 1    | version_minor | u8     | v1.0 → 0 |
-| 0x06   | 2    | header_len    | u8     | End of signed region |
-| 0x0A   | 2    | flags         | u16    | See §3 |
-| 0x0C   | 2    | flags_ext     | u16    | MUST be 0 in v1 |
-| 0x0F   | 8    | timestamp_s   | u64    | Origin issue time |
-| 0x17   | 8    | origin_id     | u64    | Policy-defined label |
-| 0x1F   | 16   | event_root_id | u8[16] | Stable event ID |
-| 0x2F   | 2    | seq           | u16    | Revision counter |
-| 0x31   | 2    | ttl_s         | u16    | MAX_SPREAD_S |
-| 0x33   | 4    | reserved1     | u32    | MUST be 0 |
-| 0x37   | …    | alert_fields  | —      | ALERT fields (see §4) |
+| Offset | Size | Field         | Type  | Description               |
+| ------ | ---- | ------------- | ----- | ------------------------- |
+| 0x00   | 4    | magic         | u8[4] | ASCII “QDP1”              |
+| 0x04   | 1    | version_major | u8    | v1.0 → 1                  |
+| 0x05   | 1    | version_minor | u8    | v1.0 → 0                  |
+| 0x06   | 2    | flags         | u16   | See §3                    |
+| 0x08   | …    | payload       | -     | ALERT or non-ALERT fields |
 
 Notes:
-- `header_len` MUST be ≤ packet length.
-- Bytes beyond `header_len` are **unsigned tail**.
+
+- The signed region is `[0x00, packet_len − 64)` for signed packets.
+- The signature is always the last 64 bytes of signed packets.
 
 ---
 
 ## 3. Flags
 
-| Bit | Name       | Meaning |
-|-----|------------|--------|
-| 0   | PROPAGATE  | Eligible for alert-plane forwarding |
-| 1   | URGENT     | Forward with priority |
-| 2   | UPDATE     | Revision of existing event |
-| 3   | CANCEL     | Cancels an existing event |
-| 4   | TEST       | Test alert |
-| 5–15 | RESERVED  | MUST be 0 in v1 |
+**Bit numbering:** Bit 0 is the **most significant bit (MSB)**.
 
-Unknown bits MUST be ignored.
+| Bit  | Name      | Meaning                                    |
+| ---- | --------- | ------------------------------------------ |
+| 0    | ALERT     | This is an ALERT packet                    |
+| 1    | URGENT    | Forward with priority                      |
+| 2    | UPDATE    | Revision of existing event                 |
+| 3    | CANCEL    | Cancels an existing event                  |
+| 4    | PROPAGATE | Eligible for alert-plane forwarding        |
+| 5    | TEST      | Test alert                                 |
+| 6–15 | RESERVED  | Unused in v1; MUST be ignored by receivers |
 
 ---
 
@@ -190,132 +187,195 @@ Unknown bits MUST be ignored.
 
 ### 4.1 Fixed ALERT Fields
 
-| Offset | Size | Field              | Type |
-|--------|------|--------------------|------|
-| 0x37   | 1    | hazard_major       | u8 |
-| 0x38   | 1    | hazard_minor       | u8 |
-| 0x39   | 2    | measure            | u16 |
-| 0x3B   | 1    | urgency            | u8 |
-| 0x3C   | 1    | intensity          | u8 |
-| 0x3D   | 1    | certainty          | u8 |
-| 0x3E   | 1    | response           | u8 |
-| 0x3F   | 8    | onset_s            | u64 |
-| 0x47   | 8    | expiry_s           | u64 |
-| 0x4F   | 8    | event_time_s       | u64 |
-| 0x57   | 4    | epicenter_lat_uDeg | i32 |
-| 0x5B   | 4    | epicenter_lon_uDeg | i32 |
-| 0x5F   | 2    | radius_10m         | u16 |
-| 0x61   | 2    | signed_tlv_len     | u16 |
-| 0x63   | 2    | alert_reserved1    | u16 |
-| 0x65   | N    | signed_tlv         | bytes |
+| Offset | Size | Field              | Type   |
+| ------ | ---- | ------------------ | ------ |
+| 0x08   | 8    | timestamp_s        | u64    |
+| 0x10   | 16   | event_root_id      | u8[16] |
+| 0x20   | 2    | seq                | u16    |
+| 0x22   | 2    | ttl_s              | u16    |
+| 0x24   | 1    | hazard_major       | u8     |
+| 0x25   | 1    | hazard_minor       | u8     |
+| 0x26   | 1    | urgency            | u8     |
+| 0x27   | 1    | intensity          | u8     |
+| 0x28   | 1    | certainty          | u8     |
+| 0x29   | 1    | response           | u8     |
+| 0x2A   | 8    | onset_s            | u64    |
+| 0x32   | 8    | expiry_s           | u64    |
+| 0x3A   | 8    | effective_time_s   | u64    |
+| 0x42   | 4    | epicenter_lat_uDeg | i32    |
+| 0x46   | 4    | epicenter_lon_uDeg | i32    |
+| 0x4A   | 2    | radius_10m         | u16    |
+| 0x4C   | N    | signed_tlv         | bytes  |
 
-### 4.2 Signature Block (NO embedded pubkey)
+**Field descriptions:**
 
-Immediately after `signed_tlv`:
+- `onset_s`: When the alert becomes active
+- `expiry_s`: When the alert expires
+- `effective_time_s`: When the event actually occurred or will occur
+- `radius_10m`: Affected radius used for propagation decisions (see §8.2)
 
-| Field         | Size |
-|---------------|------|
-| origin_key_id | 8 |
-| signature     | 64 |
+**Deriving signed_tlv bounds:**
+The signed TLV block has no explicit length field. Bounds are derived from the transport-provided packet length:
+
+- `signed_tlv` starts at offset `0x4C`
+- `signed_tlv` ends at `packet_len − 72` (72 = 8 origin_key_id + 64 signature)
+- Receivers MUST validate: `packet_len ≥ 0x4C + 72` (i.e., `packet_len ≥ 148`)
+
+### 4.2 Signature Block
+
+Immediately follows `signed_tlv`:
+
+| Field         | Size | Description                                             |
+| ------------- | ---- | ------------------------------------------------------- |
+| origin_key_id | 8    | Identifies the signing key in the Origin Registry (§17) |
+| signature     | 64   | Ed25519 signature                                       |
 
 - Algorithm: **Ed25519 (required)**
-- `origin_key_id` identifies a public key in the local Origin Registry (§16).
-- Signature signs all bytes from offset `0x00` up to (but excluding) the `signature` field.
-  - This includes `origin_key_id`.
-
-`header_len` MUST include the entire signature block and MUST end exactly after the signature field.
+- Signed region: `[0x00, packet_len − 64)` — covers Common Prefix + ALERT fields + signed_tlv + origin_key_id.
+- Receivers MUST resolve `origin_key_id` via the Origin Registry and reject if not present.
+- Receivers MUST verify the signature before acting on any ALERT field.
 
 ---
 
-## 5. Hazard Taxonomy
+## 5. Value Tables
 
-| hazard_major | hazard_minor | Meaning               |
-|--------------|--------------|-----------------------|
-| 0            | 0            | RESERVED (invalid)    |
-| 1            | 0            | Geophysical Unknown   |
-| 1            | 1            | Earthquake            |
-| 1            | 2            | Landslide             |
-| 2            | 0            | Meteorological Unknown|
-| 2            | 1            | Tsunami               |
-| 2            | 2            | Storm                 |
-| 2            | 3            | Flood                 |
-| 3            | 0            | Safety Unknown        |
-| 4            | 0            | Security Unknown      |
-| 4            | 1            | Terrorism             |
-| 4            | 2            | Military Activity     |
-| 5            | 0            | Rescue Unknown        |
-| 6            | 0            | Fire Unknown          |
-| 6            | 1            | Wildfire              |
-| 6            | 2            | City Fire             |
-| 6            | 3            | Prescribed Fire       |
-| 7            | 0            | Health Unknown        |
-| 8            | 0            | Environment Unknown   |
-| 8            | 1            | Air pollution         |
-| 9            | 0            | Transport Unknown     |
-| 0x0A         | 0            | Infra Unknown         |
-| 0x0B         | 0            | CBRNE Unknown         |
-| 0xFF         | 0            | Other (consult TLV)   |
+These list the possible values for fields in qdp ALERT packets. Most fields are designed to reflect CAP.
+For advanced meanings of these values, refer to the OASIS [CAP specs](https://docs.oasis-open.org/emergency/cap/v1.2/CAP-v1.2-os.pdf) §3.2.2.
+
+NOTE: `hazard_minor` values are to be determined.
+
+### 5.1 Hazard tables
+
+| hazard_major | hazard_minor | Meaning                |
+| ------------ | ------------ | ---------------------- |
+| 0            | 0            | RESERVED (invalid)     |
+| 1            | 0            | Geophysical Unknown    |
+| 1            | 1            | Earthquake             |
+| 1            | 2            | Landslide              |
+| 1            | 3            | Tsunami                |
+| 2            | 0            | Meteorological Unknown |
+| 2            | 1            | Storm                  |
+| 2            | 2            | Flood                  |
+| 3            | 0            | Safety Unknown         |
+| 4            | 0            | Security Unknown       |
+| 4            | 1            | Terrorism              |
+| 4            | 2            | Military Activity      |
+| 5            | 0            | Rescue Unknown         |
+| 6            | 0            | Fire Unknown           |
+| 6            | 1            | Wildfire               |
+| 6            | 2            | City Fire              |
+| 6            | 3            | Prescribed Fire        |
+| 7            | 0            | Health Unknown         |
+| 8            | 0            | Environmental Unknown  |
+| 8            | 1            | Air pollution          |
+| 9            | 0            | Transport Unknown      |
+| 0x0A         | 0            | Infra Unknown          |
+| 0x0B         | 0            | CBRNE Unknown          |
+| 0xFF         | 0            | Other                  |
+
+### 5.2 Response
+
+| Value | Meaning           |
+| ----- | ----------------- |
+| 0     | RESERVED(invalid) |
+| 1     | All Clear         |
+| 2     | Assess            |
+| 3     | Avoid             |
+| 4     | Evacuate          |
+| 5     | Execute           |
+| 6     | Monitor           |
+| 7     | Prepare           |
+| 8     | Shelter           |
+| 9     | None              |
+
+### 5.3 Urgency
+
+| Value | Meaning           |
+| ----- | ----------------- |
+| 0     | RESERVED(invalid) |
+| 1     | Expected          |
+| 2     | Future            |
+| 3     | Immediate         |
+| 4     | Past              |
+| 5     | Unknown           |
+
+### 5.4 Intensity
+
+| Value | Meaning           |
+| ----- | ----------------- |
+| 0     | RESERVED(invalid) |
+| 1     | Extreme           |
+| 2     | Minor             |
+| 3     | Moderate          |
+| 4     | Severe            |
+| 5     | Unknown           |
+
+### 5.5 Certainty
+
+| Value | Meaning           |
+| ----- | ----------------- |
+| 0     | RESERVED(invalid) |
+| 1     | Likely            |
+| 2     | Observed          |
+| 3     | Possible          |
+| 4     | Unlikely          |
+| 5     | Unknown           |
 
 ## 6. Event Identity and Updates
 
 - `event_root_id` identifies a physical event.
 - `seq` is monotonic per event.
+- `seq` MUST NOT overflow. In the case `seq` reaches 65534, the origin MUST cancel that alert and re-issue another alert with a different ID if it needs to issue an update that is not CANCEL.
+  - This means that all ALERT packets with `seq` 65535 MUST be CANCEL alerts.
 
 Receiver rules:
+
 - seq < highest_seen → drop
 - seq == highest_seen → drop duplicate
-- seq > highest_seen → accept update
+- seq > highest_seen → accept update, advance highest_seen
 
-Replay key tuple:
+Deduplication state per event:
 
-    (origin_key_id, event_root_id, seq)
+    (origin_key_id, event_root_id) → highest_seq: u16
+
+### 6.1 CANCEL Semantics
+
+A packet with the CANCEL flag set cancels the event identified by `event_root_id`.
+
+- CANCEL packets MUST carry a `seq` strictly greater than the highest previously accepted `seq` for that event.
+- Upon accepting a CANCEL, receivers MUST immediately expire the event and cease acting on it.
+- The CANCEL's deduplication entry MUST persist in the replay cache for at least `ttl_s` seconds measured from the CANCEL packet's own `timestamp_s`. This prevents late-arriving retransmissions of the original alert from slipping through after the CANCEL entry expires.
 
 ---
 
 ## 7. Signed TLV Format
 
 TLV layout:
+
 - type: u8
-- len:  u8
-- val:  u8[len]
+- len: u8
+- val: u8[len]
 
 Rules:
+
 - Unknown TLVs MUST be ignored.
 - TLVs MUST NOT be required for core safety behavior.
 
 TLVs:
+
 - 0x00 UNUSED
 - 0x01 HAZARD_NAME (UTF-8)
 - 0x02 CAP_ID (UTF-8)
-- 0x03 REGION_CODE (u32)
-- 0x04 TEXT_SUMMARY (UTF-8)
-- 0x05 POLYGON ((i32, i32)[])
+- 0x03 POLYGON ((i32, i32)[])
+  - POLYGON MUST contain no less than 3 points and no more than 8 points.
 
 ---
 
-## 8. Signature Semantics (ALERT)
+## 8. Forwarding Semantics (ALERT)
 
-- Algorithm: **Ed25519 (required)**
-- Signed region:
-  - All bytes from offset 0x00
-  - Up to but excluding the signature field
-- `origin_key_id` is included in the signed region.
+### 8.1 Time-Based TTL (Canonical v1)
 
-Authorization and verification (required):
-- Receivers MUST resolve `origin_key_id` using the local Origin Registry.
-- If `origin_key_id` is unknown or inactive/revoked, the alert MUST be rejected for safety-critical purposes.
-- If known, receivers MUST verify the signature using the registry’s `origin_pubkey`.
-- Receivers MUST also enforce local policy constraints from the registry entry (hazard/region scopes, etc.).
-
----
-
----
-
-## 9. Forwarding Semantics (ALERT)
-
-### 9.1 Time-Based TTL (Canonical v1)
-
-The `ttl_s` field represents **MAX_SPREAD_S**.
+The `ttl_s` field represents how many seconds the packet is permitted to spread.
 
 Conceptual rule:
 
@@ -324,59 +384,189 @@ Conceptual rule:
 
 Packets are immutable; relays MUST NOT modify signed bytes.
 
-### 9.2 Geographic Bounding
+### 8.2 Geographic Bounding
+
 - Relays SHOULD drop packets outside `radius_10m × 10` meters.
 - Backbone relays MAY override.
 
-### 9.3 PROPAGATE Flag
+### 8.3 PROPAGATE Flag
+
 - If unset, packet MUST NOT be forwarded.
 
-### 9.4 Forwarding Strategy
+### 8.4 Forwarding Strategy
+
 - Stateless fan-out
 - Rate-limited
 - Random optional jitter
 
 ---
 
-## 10. Seeding Model
+## 9. Non-ALERT packets
 
-- Regional Origin signs alerts.
-- Data Relay performs first-hop seeding.
+### 9.1 Fixed headers
+
+| Offset | Size | Field           | Type |
+| ------ | ---- | --------------- | ---- |
+| 0x08   | 2    | kind            | u16  |
+| 0x0A   | …    | general payload | -    |
+
+The `kind` field identifies the packet type. All non-ALERT packets share this header immediately after the Common Prefix.
+
+Receivers MUST silently drop any packet whose `kind` is unknown or whose `kind` belongs to a different transport's range.
+
+### 9.2 qdp Reserved Ranges
+
+The table of reservations for qdp 1.0 is as follows.
+
+| Range/Value   | Category          |
+| ------------- | ----------------- |
+| 0x0000        | RESERVED(invalid) |
+| 0x0001-0x00FF | qdp               |
+| 0x0100-0x01FF | ipqdp             |
+| 0x0200-0xFEFF | Future use        |
+| 0xFF00-0xFFFE | Private use       |
+| 0xFFFF        | RESERVED(invalid) |
+
+## 10. Non-ALERT reserved packet kinds
+
+All packets with `kind` in the qdp core range (0x0001–0x00FF) are master origin advisories and MUST be signed by the compiled-in master origin key(distribution is out of band, and master key rotation will need an update). Signing is determined by `kind`, not by a flag.
+
+Receivers MUST:
+
+- Verify the Ed25519 signature over the signed region `[0x00, packet_len − 64)`.
+- Drop the packet if verification fails.
+- Drop the packet if `kind` is unknown.
+
+### Advisory Signature Block
+
+Immediately follows the kind-specific payload:
+
+| Field     | Size | Description                                      |
+| --------- | ---- | ------------------------------------------------ |
+| signature | 64   | Ed25519 signature over `[0x00, packet_len − 64)` |
+
+### Advisory Kind Assignments
+
+| Kind   | Name                      |
+| ------ | ------------------------- |
+| 0x0001 | ADVISORY_NEW              |
+| 0x0002 | ADVISORY_REVOKE           |
+| 0x0003 | ADVISORY_RETIRE           |
+| 0x0004 | ADVISORY_UPDATE           |
+| 0x0005 | ADVISORY_REGISTRY_REFRESH |
+
+---
+
+### 10.1 ADVISORY_NEW (0x0001)
+
+Registers a new alert origin. Receivers MUST add the entry to their local registry and update their stored registry version to `new_registry_version`. In the case nodes receive a valid ADVISORY_NEW packet that collides with the current registry, nodes MUST drop that packet and refuse update, and SHOULD do a full resync of its local origin registry.
+
+| Offset | Size | Field                | Type   |
+| ------ | ---- | -------------------- | ------ |
+| 0x0A   | 8    | new_registry_version | u64    |
+| 0x12   | 8    | origin_key_id        | u64    |
+| 0x1A   | 32   | pubkey_ed25519       | u8[32] |
+
+Minimum packet size: 8 (prefix) + 2 (kind) + 48 (payload) + 64 (signature) = **122 bytes**
+
+---
+
+### 10.2 ADVISORY_REVOKE (0x0002)
+
+Emergency revocation of a compromised or rogue alert origin. Receivers MUST immediately remove the identified origin from their local registry and reject any further ALERTs signed by it, regardless of signature validity.
+
+This packet SHOULD have URGENT and PROPAGATE set.
+
+| Offset | Size | Field                | Type |
+| ------ | ---- | -------------------- | ---- |
+| 0x0A   | 8    | new_registry_version | u64  |
+| 0x12   | 8    | origin_key_id        | u64  |
+
+Minimum packet size: 8 + 2 + 16 + 64 = **90 bytes**
+
+---
+
+### 10.3 ADVISORY_RETIRE (0x0003)
+
+Planned decommission of an alert origin. Receivers MUST remove the identified origin from their local registry and update their stored registry version.
+
+Unlike ADVISORY_REVOKE, retirement is planned and does not imply compromise. URGENT SHOULD NOT be set.
+
+| Offset | Size | Field                | Type |
+| ------ | ---- | -------------------- | ---- |
+| 0x0A   | 8    | new_registry_version | u64  |
+| 0x12   | 8    | origin_key_id        | u64  |
+
+Minimum packet size: **90 bytes**
+
+---
+
+### 10.4 ADVISORY_UPDATE (0x0004)
+
+Notifies nodes of a scheduled qdp protocol update. This is advisory only — implementations MAY ignore it. It carries no enforcement.
+
+| Offset | Size | Field              | Type |
+| ------ | ---- | ------------------ | ---- |
+| 0x0A   | 1    | version_major      | u8   |
+| 0x0B   | 1    | version_minor      | u8   |
+| 0x0C   | 8    | scheduled_update_s | u64  |
+
+Minimum packet size: 8 + 2 + 10 + 64 = **84 bytes**
+
+---
+
+### 10.5 ADVISORY_REGISTRY_REFRESH (0x0005)
+
+Signals that the registry has been updated and nodes SHOULD re-sync via the info-plane. Carries the authoritative current registry version so receivers can determine whether they are behind.
+
+| Offset | Size | Field                    | Type |
+| ------ | ---- | ------------------------ | ---- |
+| 0x0A   | 8    | current_registry_version | u64  |
+
+Receivers that find their local registry version behind `current_registry_version` SHOULD fetch the full registry from the info-plane.
+
+Minimum packet size: 8 + 2 + 8 + 64 = **82 bytes**
+
+## 11. Seeding Model
+
+- **Alert Origin**: signs and issues ALERT packets.
+- **Data Relay**: receives alerts from Alert Origins and performs first-hop seeding into the mesh.
 
 Goals:
-- Multiple independent entry points
-- Delivery over precision
+
+- Multiple independent entry points into the mesh
+- Delivery over precision — best-effort propagation is preferred over guaranteed delivery
+
+All alert-plane propagation from Alert Origins MUST pass through at least one Data Relay before reaching leaf clients. General qdp coordination packets MAY originate from any node. Transport-specific seeding rules (relay discovery, registration, forwarding topology) are defined in per-transport specifications. See ipqdp.
 
 ---
 
-## 11. Freshness and Replay Windows
+## 12. Freshness and Replay Windows
 
-Suggested defaults:
-- max_receive_s ≈ 300 seconds
-- Replay cache duration ≥ max_receive_s
+REQUIRED cache length:
 
----
-
-## 12. NAT and Client Constraints
-
-- Leaf clients may not accept inbound UDP.
-- Relays SHOULD provide reachable ingress points.
-- Client keepalive is out of scope.
+- Replay cache duration ≥ ttl_s
 
 ---
 
-## 13. Security Notes
+## 13. Transport Constraints
+
+Transport-specific constraints such as NAT traversal, port binding, and client keepalive are defined in per-transport specifications. See ipqdp for IP-specific behavior.
+
+---
+
+## 14. Security Notes
 
 - Only authorized origin keys (per local Origin Registry + local policy) can create valid ALERTs.
 - Relay compromise cannot forge alerts unless it steals an origin private key.
-- Unsigned tail MUST NOT affect decisions.
 - Implementations SHOULD rate-limit verification.
 
 ---
 
-## 14. Compliance Targets
+## 15. Compliance Targets
 
 ### Relay MUST
+
 - Bounds-check packets
 - Resolve `origin_key_id` via Origin Registry
 - Verify signature
@@ -385,149 +575,80 @@ Suggested defaults:
 - Forward immutable packets
 
 ### Client MUST
+
 - Bounds-check packets
 - Resolve `origin_key_id` via Origin Registry
 - Verify signature
 - Enforce freshness
-- Ignore unsigned tail
 
 ---
 
-## 15. Reference Sizes (ALERT, no TLV)
+## 16. Reference Sizes (ALERT, no TLV)
 
-- Common prefix: 55 bytes
-- ALERT fixed fields: 46 bytes
+- Common prefix: 8 bytes
+- ALERT fixed fields: 68 bytes
 - Signature block: 72 bytes
-- **Total:** 173 bytes
+- **Total:** 148 bytes
 
 ---
 
-## 16. Origin Registry Format (JSON)
+## 17. Origin Registry Format
 
-This section defines a simple local file format that maps `origin_key_id` → public key and policy constraints.
+This section defines a simple local file or in-memory region that maps `origin_key_id` → public key.
 
 This file is NOT transmitted on the alert-plane. How it is distributed/updated is out of scope.
 
-### 16.1 Top-level structure
+### 17.1 Top-level structure
 
-- `format`: string, MUST be `"qdp-origins-1"`
-- `generated_at_s`: u64, informational
-- `expires_at_s`: u64, informational (0 if none)
-- `origins`: array of origin entries
+- `registry_version`: u64, used to manage deltas and versions. This MUST match the newest version that the node has obtained, either via a sync or ADVISORY.
 
-### 16.2 Origin Entry
+### 17.2 Origin Entry
 
 Each entry MUST contain:
-- `origin_key_id`: string (hex `0x...` for u64) OR integer (must fit u64)
-- `pubkey_ed25519`: string (base64)
-- `status`: `"active"` | `"revoked"` | `"retired"`
-- `label`: string (human-readable)
-- `scopes`: object describing what this origin is authorized to sign
 
-Recommended `scopes` fields:
-- `region_codes`: array of u32 (matches TLV REGION_CODE), or empty for “any”
-- `hazard_majors`: array of u8, or empty for “any”
-- `hazard_minors`: optional map from major → array of minors (fine-grained allowlist)
-- `max_radius_10m`: u16 (0 means “no limit specified”)
-- `allow_test`: bool
-- `allow_cancel`: bool
+- `origin_key_id`: integer (must fit u64)
+- `pubkey`: Raw Ed25519 public key (32 bytes)
 
-### 16.3 Example JSON (base64 pubkeys)
+### 17.3 Required receiver behavior (authorization)
 
-```json
-{
-  "format": "qdp-origins-1",
-  "generated_at_s": 1730000000,
-  "expires_at_s": 0,
-  "origins": [
-    {
-      "origin_key_id": "0x1122334455667788",
-      "pubkey_ed25519_b64": "qv6sHn...base64...==",
-      "status": "active",
-      "label": "USGS West Coast (example)",
-      "scopes": {
-        "region_codes": [ 6, 12 ],
-        "hazard_majors": [ 1, 2 ],
-        "hazard_minors": { "1": [1,2], "2": [1,2,3] },
-        "max_radius_10m": 60000,
-        "allow_test": false,
-        "allow_cancel": true
-      }
-    }
-  ]
-}
-```
-
-### 16.4 Required receiver behavior (authorization)
 Receivers MUST:
-- Reject ALERTs if `origin_key_id` does not exist in the registry OR entry status != `"active"`.
-- Verify Ed25519 signature using the registry pubkey.
-- Enforce scope rules:
-  - If `region_codes` non-empty and packet’s REGION_CODE TLV is present, it MUST be in the allowlist.
-  - If `hazard_majors` non-empty, `hazard_major` MUST be in allowlist.
-  - If `hazard_minors` present for that major, `hazard_minor` MUST be in allowlist.
-  - If `max_radius_10m` non-zero, packet `radius_10m` MUST be ≤ it.
-  - If TEST flag set, `allow_test` MUST be true (else reject or suppress per local policy).
-  - If CANCEL flag set, `allow_cancel` MUST be true (else reject).
 
-Note: REGION_CODE is optional on-wire. If a deployment requires region constraints, it SHOULD require REGION_CODE TLV presence by local policy.
+- Reject ALERTs if `origin_key_id` does not exist in the registry.
+- Verify Ed25519 signature using the registry pubkey.
+- Remove origins immediately upon receiving a valid ADVISORY_REVOKE or ADVISORY_RETIRE signed by the master origin.
 
 ---
 
-## 17. System Requirements
+## 18. System Requirements
 
-### 17.1 Minimum System Requirements
+### 18.1 Minimum System Requirements
 
 - CPU
-  - Support for 8-bit pointer arithmetic
+  - 32-bit ALU capable of 32-bit arithmetic
 - Memory
   - At least 1024 bytes of stack space
 
-### 17.2 Recommended System Requirements
+### 18.2 Recommended System Requirements
 
 - CPU
-  - Support for 16-bit pointer arithmetic
-  - Support for large-number arithmetic for Ed25519 verification
+  - 32-bit ALU capable of 32-bit arithmetic
 - Memory
-  - At least 2047 bytes of stack space
-  - At least 255 byes of dynamic heap space(Vector TLV storage)
+  - At least 2048 bytes of stack space
+  - At least 255 bytes of dynamic heap space(Vector TLV storage)
+- Other
+  - Geolocation awareness to reject false alerts
+    - This is just in case an alert relay decides to send qdp packets to unaffected regions.
 
 ---
 
-## 18. Explicitly Out of Scope
+## 19. Transportation and auxiliary infrastructure
 
-- Info-plane schemas
-- Key distribution / revocation mechanisms for the Origin Registry
-- Guaranteed delivery
-- UI / user policy
-- Post-alert TCP chasing
+- qdp only declares the common protocol which all devices using qdp must be able to parse.
+- Info-plane schemas, key distribution, and propagation will be medium-dependent.
+- There are other specifications that are dependent on the medium, such as:
+  - ipqdp: a mesh propagation network over TCP/UDP/IP. Defines HELLO, RESYNC, and other IP-specific behavior. The primary distribution method.
+  - Other mediums may distribute qdp natively with medium-specific framing. The auxiliary data may change, but the qdp packet itself will be preserved.
 
 ---
 
 **END OF SPEC**
-
-
-TODO:
-
-List:
-- Scheme for updating keys
-- 
-
-## X. Public key embedding
-
-- 4 origin pubkeys will be compiled into the binary.
-- If the origin key is compromised, they will be rotated out in the next software update.
-- In the communication specs, the origin key invalidation scheme will be described in detail.
-
-
-
-
-
-
-
-
-
-
-
-
-
