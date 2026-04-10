@@ -196,7 +196,7 @@ Notes:
 | 0x24   | 1    | hazard_major       | u8     |
 | 0x25   | 1    | hazard_minor       | u8     |
 | 0x26   | 1    | urgency            | u8     |
-| 0x27   | 1    | intensity          | u8     |
+| 0x27   | 1    | severity           | u8     |
 | 0x28   | 1    | certainty          | u8     |
 | 0x29   | 1    | response           | u8     |
 | 0x2A   | 8    | onset_s            | u64    |
@@ -299,7 +299,7 @@ NOTE: `hazard_minor` values are to be determined.
 | 4     | Past              |
 | 5     | Unknown           |
 
-### 5.4 Intensity
+### 5.4 Severity
 
 | Value | Meaning           |
 | ----- | ----------------- |
@@ -324,7 +324,7 @@ NOTE: `hazard_minor` values are to be determined.
 ## 6. Event Identity and Updates
 
 - `event_root_id` identifies a physical event.
-- `seq` is monotonic per event.
+- `seq` is monotonic per event, starting from 0.
 - `seq` MUST NOT overflow. In the case `seq` reaches 65534, the origin MUST cancel that alert and re-issue another alert with a different ID if it needs to issue an update that is not CANCEL.
   - This means that all ALERT packets with `seq` 65535 MUST be CANCEL alerts.
 
