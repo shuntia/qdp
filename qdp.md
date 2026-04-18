@@ -1,12 +1,14 @@
+author:
+  ins: S. Koga
+  name: Shunta Koga
+  email: shunta@koga.us
+
 # qdp — Quake (and Disaster) Datagram Protocol
 
-## Binary Wire Specification — v1.0 (draft)
+--- abstract
 
-**Author:** shuntia
-**Status:** Draft / implementable
+This document describes a standard to communicate 
 
-**Scope:**
-This document specifies **only** the on-wire binary formats and the **minimum required semantics** to implement packet parsing, integrity & authenticity verification, replay protection, alert propagation, and seeding.
 
 ## Purpose
 
@@ -86,7 +88,7 @@ All multi-byte integers are **LITTLE-ENDIAN** unless explicitly stated. Little-e
 
 ### 1.1 Normative Language
 
-The keywords **MUST**, **SHOULD**, **MAY** are normative.
+{::boilerplate bcp14-tagged}
 
 ### 1.2 Versioning
 
@@ -242,7 +244,7 @@ Immediately follows `signed_tlv`:
 These list the possible values for fields in qdp ALERT packets. Most fields are designed to reflect CAP.
 For advanced meanings of these values, refer to the OASIS [CAP specs](https://docs.oasis-open.org/emergency/cap/v1.2/CAP-v1.2-os.pdf) §3.2.2.
 
-NOTE: `hazard_minor` values are to be determined.
+NOTE: additional `hazard_minor` values are to be determined. Should be able to convert from all preexisting CAP messages which have been produced using this table.
 
 ### 5.1 Hazard tables
 
@@ -373,14 +375,14 @@ TLVs:
 
 ## 8. Forwarding Semantics (ALERT)
 
-### 8.1 Time-Based TTL (Canonical v1)
+### 8.1 Time-Based TTL
 
 The `ttl_s` field represents how many seconds the packet is permitted to spread.
 
 Conceptual rule:
 
     age_s = now_s − timestamp_s
-    if age_s > ttl_s → MUST NOT forward
+    if age_s > ttl_s → SHOULD NOT forward
 
 Packets are immutable; relays MUST NOT modify signed bytes.
 
@@ -647,6 +649,7 @@ Receivers MUST:
 - Info-plane schemas, key distribution, and propagation will be medium-dependent.
 - There are other specifications that are dependent on the medium, such as:
   - ipqdp: a mesh propagation network over TCP/UDP/IP. Defines HELLO, RESYNC, and other IP-specific behavior. The primary distribution method.
+  - loraqdp: qdp over raw LoRa radio. Targets long-range, low-bandwidth deployment on constrained hardware.
   - Other mediums may distribute qdp natively with medium-specific framing. The auxiliary data may change, but the qdp packet itself will be preserved.
 
 ---

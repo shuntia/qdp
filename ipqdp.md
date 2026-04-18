@@ -8,6 +8,15 @@
 **Scope:**
 This document specifies IP-specific behavior for qdp, including NAT traversal, port binding, client registration, relay heartbeats, and bootstrapping. The qdp wire format is unchanged; this document defines how it is carried over UDP/TCP/IP.
 
+## Purpose
+
+`qdp` itself is not complete without transportation mediums. IP is the most prevalent method of data transportation, so it shall be the main method transporting qdp packets.
+
+## 0. Design Goals
+
+- Provide maximum flexibility with maximum simplicity
+  - Balance load
+
 ---
 
 ## 1. NAT and Client Constraints
@@ -18,3 +27,5 @@ This document specifies IP-specific behavior for qdp, including NAT traversal, p
 - Relays MUST record the source `(ip, port)` of each registration and use it as the alert delivery address.
 
 ---
+
+
