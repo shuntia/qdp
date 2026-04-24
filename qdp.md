@@ -390,7 +390,7 @@ Packets are immutable; relays MUST NOT modify signed bytes.
 
 ## 8.3 PROPAGATE Flag
 
-- If unset, packet MUST NOT be forwarded.
+- If unset, packet MUST NOT be forwarded by an alert relay unless the first hop cannot reasonably reach all subscribed nodes(such as radio meshes with clients requiring.
 
 ## 8.4 Forwarding Strategy
 
@@ -477,8 +477,6 @@ This packet SHOULD have URGENT and PROPAGATE set to 1.
 
 Minimum packet size: 8 + 2 + 16 + 64 = 90 bytes
 
-
-
 ## 10.3 ADVISORY_RETIRE (0x0003)
 
 Planned decommission of an alert origin. Receivers MUST remove the identified origin from their local registry and update their stored registry version.
@@ -536,15 +534,9 @@ REQUIRED cache length:
 
 # 13. Transport Constraints
 
-Transport-specific constraints such as NAT traversal, port binding, and client keepalive are defined in per-transport specifications. See ipqdp for IP-specific behavior.
+Transport-specific constraints such as NAT traversal, port binding, and client keepalive are defined in per-transport specifications.
 
-# 14. Security Notes
-
-- Only authorized origin keys (per local Origin Registry + local policy) can create valid ALERTs.
-- Relay compromise cannot forge alerts unless it steals an origin private key.
-- Implementations SHOULD rate-limit verification.
-
-# 15. Compliance Targets
+# 14. Compliance Targets
 
 ## Relay MUST
 
@@ -562,37 +554,41 @@ Transport-specific constraints such as NAT traversal, port binding, and client k
 - Verify signature
 - Enforce freshness
 
-# 16. Reference Sizes (ALERT, no TLV)
+# 15. Reference Sizes (ALERT, no TLV)
 
 - Common prefix: 8 bytes
 - ALERT fixed fields: 68 bytes
 - Signature block: 72 bytes
 - Total: 148 bytes
 
-# 17. Origin Registry Format
+# 16. Origin Registry Format
 
 This section defines a simple local file or in-memory region that maps `origin_key_id` → public key.
 
 This file is NOT transmitted on the alert-plane. How it is distributed/updated is out of scope.
 
-## 17.1 Top-level structure
+## 16.1 Top-level structure
 
 - `registry_version`: u64, used to manage deltas and versions. This MUST match the newest version that the node has obtained, either via a sync or ADVISORY.
 
-## 17.2 Origin Entry
+## 16.2 Origin Entry
 
 Each entry MUST contain:
 
 - `origin_key_id`: integer (must fit u64)
 - `pubkey`: Raw Ed25519 public key (32 bytes)
 
-## 17.3 Required receiver behavior (authorization)
+## 16.3 Required receiver behavior (authorization)
 
 Receivers MUST:
 
 - Reject ALERTs if `origin_key_id` does not exist in the registry.
 - Verify Ed25519 signature using the registry pubkey.
 - Remove origins immediately upon receiving a valid ADVISORY_REVOKE or ADVISORY_RETIRE signed by the master origin.
+
+# 17. Mesh Isolation
+
+Although qdp alerts are made to be usable in any region, nations SHOULD isolate their mesh against potential attacks by neighboring nations via a false alert. In such cases, nations SHOULD compile in their own keys for their nation, and isolate their trust system.
 
 # 18. Transportation and auxiliary infrastructure
 
@@ -606,7 +602,11 @@ Other mediums may distribute qdp natively with medium-specific framing. The auxi
 
 # Security Considerations
 
-
+The security and validity of qdp effectively relies on a single master key, which should be kept airtight, preferably using an HSM or equivalent security measure. If the master key is compromised, then a large-scale firmware update would be necessary for resetting keys.
+<!--I might add an ADVISORY_MASTER that has a ROOT key. That's for tomorrow, I guess.-->
+Alert origins should keep their private keys secure, but in the case of a compromise, the master key should be able to revoke the compromised key fairly quickly.
+Malicious alert relays will not be able to issue alerts or affect another node unless they have a origin private key, and complying implementations will be able to drop invalid packets either forged by a node or replayed from a previous time.
+A malicious fleet of relays can "dilute" the mesh depending on the medium. On mediums such as IP, if a fleet of relays register but drop packets on a real emergency alert, they may degrade the resilience of the network.
 
 # IANA Considerations
 
