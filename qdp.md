@@ -2,52 +2,62 @@ author:
   ins: S. Koga
   name: Shunta Koga
   email: shunta@koga.us
+informative:
+  CAP:
+    title: Common Alerting Protocol Version 1.2
+    target: https://docs.oasis-open.org/emergency/cap/v1.2/CAP-v1.2-os.html
+    date: 2010
+    author:
+      -
+      ins: J. Westfall
+      name: Jacob Westfall
+      role: Editor
+      -
+      ins: E. Jones
+      name: Elysa Jones
+      org: Warning Systems. Inc.
+      -
+      org: OASIS
+ipr: trust200902
 
 # qdp — Quake (and Disaster) Datagram Protocol
 
 --- abstract
 
-This document describes a standard to communicate 
+This document describes qdp, a transport-agnostic compact binary wire protocol used for emergency alerts under contrained hardware and lossy networks. It is designed to reach farther and quicker than [OASIS CAP](https://docs.oasis-open.org/emergency/cap/v1.2/CAP-v1.2-os.html), which tries to deliver full human-readable information at the cost of complexity.
 
+--- middle
 
-## Purpose
+# Introduction
 
-The current emergency alert infrastructure, CAP(Common Alert Protocol) is flexible and widely deployed, but they have many flaws including:
+The current emergency alert infrastructure, CAP(Common Alert Protocol) is flexible and widely deployed, but the structure inherently bears complexity which may fail under extreme conditions such as lossy networks and overloaded devices(i.e. potential outcomes of emergency situations).
 
-- Lack of internationalization
-  - Not all people in the affected area are guaranteed to know that language.
-- One-to-one
-  - One connection means if that single connection fails, CAP will fail to reach the client.
-- Too long
-  - It may be small enough in terms of the capability of modern infrastructure, but it's too large that TCP/IP will favor to break the data up into multiple packets, and partial loss may render the whole message unusable.
+This document defines a protocol aimed to be maximally resilient, distributed, and lightweight to mitigate those points.
+
+# 0. Motivation
+
+## 0.1 Issues of Existing Solutions
+
+- Lack of efficient internationalization
+  - The number of messages multiplies with internationalization.
 - Unbounded
   - On systems that lack proper amounts of available memory, CAP may overwhelm the chip, given that its length is not hard-capped.
-- Concentrated
-  - Even though the networking aroud the alert origin may be robust, bottlenecks may exist at any point in between the central origin and client.
-  - Physical interruptions of the network may cause a lot of connections to fault, and may require an expensive route change.
+- Centralized
+  - Even though the networking around the alert origin may be robust, bottlenecks may exist at any point in between the central origin and client.
+  - Physical interruptions of the network may cause connections to fault, and may require an expensive route change.
   - The amount of connections the origin can juggle simultaneously limits the amount of clients that can receive CAP XML alerts.
 - Complex
-  - You cannot read information from CAP XML alerts directly, avoiding indirection and full parsing of the tree.
   - XML is hierarchical, and you need to parse the whole tree to fetch information safely.
   - CAP is too flexible and tolerant of duplicate fields in arbitrary order.
-  - XML data transmitted by CAP is inherently unordered, requiring traversal to find a specific tag.
-  - XML is intended to be markup language for humans, and is hostile against computers.
-  - The objective of CAP should be to provide infrastructure information, not directly display raw CAP to the user. It does not make sense that the computer would be able to receive CAP but not have the software to understand what it means.
   - Pushing multimedia through emergency pipelines increases the risk of corruption and/or incomplete messages.
-- Slow
-  - Current pull-based infrastructure for CAP provides delivery on the scale of minutes.
-  - Push-based system uses satellites and takes upwards to 45 seconds to deliver. In many situations you are indoors, thus have a high chance of missing the alert.
-- Unsecure
+- Insecure
   - No legitimate enforcement on signing.
-  - One could theoretically inject an unsigned CAP alert through the system and deliver nationwide panic.
 - Demanding
   - Memory requirement is theoretically unbound due to CAP being unbound.
   - Media interpretation requires mature, complex libraries.
   - Realistically requires a whole OS to be running to make use of CAP.
 
----
-
-## 0. Design Goals
+## 0.2 Design Goals
 
 - Minimal alert-plane packet
   - Single UDP datagram
@@ -58,15 +68,15 @@ The current emergency alert infrastructure, CAP(Common Alert Protocol) is flexib
   - Geographic advisory bounds
 
 - Two-plane architecture
-  - Alert-plane (UDP): eager, proactive, stateless
-  - Info-plane (HTTP/QUIC): lazy, optional (not specified here)
+  - Alert-plane: eager, proactive, stateless
+  - Info-plane: lazy, optional (not specified here)
 
 - Compatibility
   - Be easily convertible from existing formats (e.g., CAP)
   - Allow future extensions without breaking existing implementations
 
 - Strong authenticity
-  - Alerts are valid **only** if signed by a Alert Origin key
+  - Alerts are valid only if signed by a Alert Origin key
   - Relay “trust” does not imply alert validity
 
 - no_std / zero-copy friendly
@@ -75,54 +85,45 @@ The current emergency alert infrastructure, CAP(Common Alert Protocol) is flexib
   - No required allocation
 
 - MTU safety
-  - Recommended UDP payload ≤ **1200 bytes**
+  - Recommended UDP payload ≤ 1200 bytes
 
 - Lightweight
   - Be able to run on minimal hardware
 
-All multi-byte integers are **LITTLE-ENDIAN** unless explicitly stated. Little-endian was chosen for host-native efficiency on common embedded targets (ARM, x86), departing from the RFC 1700 big-endian convention.
+# 1. Definitions and Conventions
 
----
-
-## 1. Definitions and Conventions
-
-### 1.1 Normative Language
+## 1.1 Normative Language
 
 {::boilerplate bcp14-tagged}
 
-### 1.2 Versioning
+## 1.2 Versioning
 
 qdp uses a two-level versioning scheme to distinguish wire incompatibility from backward-compatible extensions.
 
-- **Major version (`version_major`)**
+- Major version (`version_major`)
   - A change in major version indicates wire-incompatible changes.
-  - If `version_major` is greater than the highest version supported by the implementation, the packet **MUST NOT** be fully interpreted.
-  - Implementations **MAY** parse only the common prefix for the purposes of safe rejection, logging, or routing, but **MUST** treat the packet as unsupported.
+  - If `version_major` is greater than the highest version supported by the implementation, the packet MUST NOT be fully interpreted.
+  - Implementations MAY parse only the common prefix for the purposes of safe rejection, logging, or routing, but MUST treat the packet as unsupported.
   - No compatibility guarantees are provided across major versions.
   - If `version_major` is zero, the packet is considered invalid.
 
-- **Minor version (`version_minor`)**
+- Minor version (`version_minor`)
   - A change in minor version indicates a backward-compatible extension within the same major version.
-  - Minor version updates **MUST NOT** change the meaning of any field defined in the current major version.
-  - Minor version updates **MAY**:
+  - Minor version updates MUST NOT change the meaning of any field defined in the current major version.
+  - Minor version updates MAY:
     - define new flag bits (previously RESERVED),
     - define new TLV types,
     - define new `hazard_minor` values,
     - add new semantics that can be safely ignored by older implementations.
   - However, keeping up to date is strongly recommended.
-  - Receivers **MUST** ignore unknown flag bits and unknown TLV types.
+  - Receivers MUST ignore unknown flag bits and unknown TLV types.
 
-In short:
-
-- **Major version changes break compatibility.**
-- **Minor version changes extend behavior without breaking existing implementations.**
-
-### 1.3 Time
+## 1.3 Time
 
 - UNIX seconds (UTC), `u64`.
 - Method of syncing time is dependent on hardware and medium.
 
-### 1.4 Geographic Encoding
+## 1.4 Geographic Encoding
 
 Latitude and longitude are signed `i32` microdegrees (1e-6 degrees).
 
@@ -131,16 +132,16 @@ Ranges:
 - latitude: −90_000_000 … +90_000_000
 - longitude: −180_000_000 … +180_000_000
 
-### 1.5 Distance
+## 1.5 Distance
 
-Distance is encoded as **10-meter units**:
+Distance is encoded as 10-meter units:
 
 - Stored value: `radius_10m` (`u16`)
 - Real meters: `affected_radius_m = radius_10m × 10`
 - Used for propagation decisions (see §8.2)
 - A value of 0 indicates "unknown" or "see polygon TLV"
 
-### 1.6 Authority Model
+## 1.6 Authority Model
 
 - ALERT validity requires:
   1. A valid Ed25519 signature, AND
@@ -148,11 +149,11 @@ Distance is encoded as **10-meter units**:
 - On-wire packets DO NOT embed public keys in v1.0.
 - The packet identifies the signing key by `origin_key_id`.
 
----
 
-## 2. Common Prefix (All Packets)
 
-**Total size: 8 bytes**
+# 2. Common Prefix (All Packets)
+
+Total size: 8 bytes
 
 | Offset | Size | Field         | Type  | Description               |
 | ------ | ---- | ------------- | ----- | ------------------------- |
@@ -167,11 +168,11 @@ Notes:
 - The signed region is `[0x00, packet_len − 64)` for signed packets.
 - The signature is always the last 64 bytes of signed packets.
 
----
 
-## 3. Flags
 
-**Bit numbering:** Bit 0 is the **most significant bit (MSB)**.
+# 3. Flags
+
+Bit numbering: Bit 0 is the most significant bit (MSB).
 
 | Bit  | Name      | Meaning                                    |
 | ---- | --------- | ------------------------------------------ |
@@ -183,11 +184,11 @@ Notes:
 | 5    | TEST      | Test alert                                 |
 | 6–15 | RESERVED  | Unused in v1; MUST be ignored by receivers |
 
----
 
-## 4. ALERT Packet
 
-### 4.1 Fixed ALERT Fields
+# 4. ALERT Packet
+
+## 4.1 Fixed ALERT Fields
 
 | Offset | Size | Field              | Type   |
 | ------ | ---- | ------------------ | ------ |
@@ -209,21 +210,21 @@ Notes:
 | 0x4A   | 2    | radius_10m         | u16    |
 | 0x4C   | N    | signed_tlv         | bytes  |
 
-**Field descriptions:**
+Field descriptions:
 
 - `onset_s`: When the alert becomes active
 - `expiry_s`: When the alert expires
 - `effective_time_s`: When the event actually occurred or will occur
 - `radius_10m`: Affected radius used for propagation decisions (see §8.2)
 
-**Deriving signed_tlv bounds:**
+Deriving signed_tlv bounds:
 The signed TLV block has no explicit length field. Bounds are derived from the transport-provided packet length:
 
 - `signed_tlv` starts at offset `0x4C`
 - `signed_tlv` ends at `packet_len − 72` (72 = 8 origin_key_id + 64 signature)
 - Receivers MUST validate: `packet_len ≥ 0x4C + 72` (i.e., `packet_len ≥ 148`)
 
-### 4.2 Signature Block
+## 4.2 Signature Block
 
 Immediately follows `signed_tlv`:
 
@@ -232,21 +233,21 @@ Immediately follows `signed_tlv`:
 | origin_key_id | 8    | Identifies the signing key in the Origin Registry (§17) |
 | signature     | 64   | Ed25519 signature                                       |
 
-- Algorithm: **Ed25519 (required)**
+- Algorithm: Ed25519 (required)
 - Signed region: `[0x00, packet_len − 64)` — covers Common Prefix + ALERT fields + signed_tlv + origin_key_id.
 - Receivers MUST resolve `origin_key_id` via the Origin Registry and reject if not present.
 - Receivers MUST verify the signature before acting on any ALERT field.
 
----
 
-## 5. Value Tables
+
+# 5. Value Tables
 
 These list the possible values for fields in qdp ALERT packets. Most fields are designed to reflect CAP.
 For advanced meanings of these values, refer to the OASIS [CAP specs](https://docs.oasis-open.org/emergency/cap/v1.2/CAP-v1.2-os.pdf) §3.2.2.
 
 NOTE: additional `hazard_minor` values are to be determined. Should be able to convert from all preexisting CAP messages which have been produced using this table.
 
-### 5.1 Hazard tables
+## 5.1 Hazard tables
 
 | hazard_major | hazard_minor | Meaning                |
 | ------------ | ------------ | ---------------------- |
@@ -275,7 +276,7 @@ NOTE: additional `hazard_minor` values are to be determined. Should be able to c
 | 0x0B         | 0            | CBRNE Unknown          |
 | 0xFF         | 0            | Other                  |
 
-### 5.2 Response
+## 5.2 Response
 
 | Value | Meaning           |
 | ----- | ----------------- |
@@ -290,7 +291,7 @@ NOTE: additional `hazard_minor` values are to be determined. Should be able to c
 | 8     | Shelter           |
 | 9     | None              |
 
-### 5.3 Urgency
+## 5.3 Urgency
 
 | Value | Meaning           |
 | ----- | ----------------- |
@@ -301,7 +302,7 @@ NOTE: additional `hazard_minor` values are to be determined. Should be able to c
 | 4     | Past              |
 | 5     | Unknown           |
 
-### 5.4 Severity
+## 5.4 Severity
 
 | Value | Meaning           |
 | ----- | ----------------- |
@@ -312,7 +313,7 @@ NOTE: additional `hazard_minor` values are to be determined. Should be able to c
 | 4     | Severe            |
 | 5     | Unknown           |
 
-### 5.5 Certainty
+## 5.5 Certainty
 
 | Value | Meaning           |
 | ----- | ----------------- |
@@ -323,7 +324,7 @@ NOTE: additional `hazard_minor` values are to be determined. Should be able to c
 | 4     | Unlikely          |
 | 5     | Unknown           |
 
-## 6. Event Identity and Updates
+# 6. Event Identity and Updates
 
 - `event_root_id` identifies a physical event.
 - `seq` is monotonic per event, starting from 0.
@@ -340,7 +341,7 @@ Deduplication state per event:
 
     (origin_key_id, event_root_id) → highest_seq: u16
 
-### 6.1 CANCEL Semantics
+## 6.1 CANCEL Semantics
 
 A packet with the CANCEL flag set cancels the event identified by `event_root_id`.
 
@@ -348,9 +349,7 @@ A packet with the CANCEL flag set cancels the event identified by `event_root_id
 - Upon accepting a CANCEL, receivers MUST immediately expire the event and cease acting on it.
 - The CANCEL's deduplication entry MUST persist in the replay cache for at least `ttl_s` seconds measured from the CANCEL packet's own `timestamp_s`. This prevents late-arriving retransmissions of the original alert from slipping through after the CANCEL entry expires.
 
----
-
-## 7. Signed TLV Format
+# 7. Signed TLV Format
 
 TLV layout:
 
@@ -371,11 +370,9 @@ TLVs:
 - 0x03 POLYGON ((i32, i32)[])
   - POLYGON MUST contain no less than 3 points and no more than 8 points.
 
----
+# 8. Forwarding Semantics (ALERT)
 
-## 8. Forwarding Semantics (ALERT)
-
-### 8.1 Time-Based TTL
+## 8.1 Time-Based TTL
 
 The `ttl_s` field represents how many seconds the packet is permitted to spread.
 
@@ -386,26 +383,24 @@ Conceptual rule:
 
 Packets are immutable; relays MUST NOT modify signed bytes.
 
-### 8.2 Geographic Bounding
+## 8.2 Geographic Bounding
 
 - Relays SHOULD drop packets outside `radius_10m × 10` meters.
 - Backbone relays MAY override.
 
-### 8.3 PROPAGATE Flag
+## 8.3 PROPAGATE Flag
 
 - If unset, packet MUST NOT be forwarded.
 
-### 8.4 Forwarding Strategy
+## 8.4 Forwarding Strategy
 
 - Stateless fan-out
 - Rate-limited
 - Random optional jitter
 
----
+# 9. Non-ALERT packets
 
-## 9. Non-ALERT packets
-
-### 9.1 Fixed headers
+## 9.1 Fixed headers
 
 | Offset | Size | Field           | Type |
 | ------ | ---- | --------------- | ---- |
@@ -416,7 +411,7 @@ The `kind` field identifies the packet type. All non-ALERT packets share this he
 
 Receivers MUST silently drop any packet whose `kind` is unknown or whose `kind` belongs to a different transport's range.
 
-### 9.2 qdp Reserved Ranges
+## 9.2 qdp Reserved Ranges
 
 The table of reservations for qdp 1.0 is as follows.
 
@@ -429,7 +424,7 @@ The table of reservations for qdp 1.0 is as follows.
 | 0xFF00-0xFFFE | Private use       |
 | 0xFFFF        | RESERVED(invalid) |
 
-## 10. Non-ALERT reserved packet kinds
+# 10. Non-ALERT reserved packet kinds
 
 All packets with `kind` in the qdp core range (0x0001–0x00FF) are master origin advisories and MUST be signed by the compiled-in master origin key(distribution is out of band, and master key rotation will need an update). Signing is determined by `kind`, not by a flag.
 
@@ -439,7 +434,7 @@ Receivers MUST:
 - Drop the packet if verification fails.
 - Drop the packet if `kind` is unknown.
 
-### Advisory Signature Block
+## Advisory Signature Block
 
 Immediately follows the kind-specific payload:
 
@@ -447,7 +442,7 @@ Immediately follows the kind-specific payload:
 | --------- | ---- | ------------------------------------------------ |
 | signature | 64   | Ed25519 signature over `[0x00, packet_len − 64)` |
 
-### Advisory Kind Assignments
+## Advisory Kind Assignments
 
 | Kind   | Name                      |
 | ------ | ------------------------- |
@@ -457,9 +452,7 @@ Immediately follows the kind-specific payload:
 | 0x0004 | ADVISORY_UPDATE           |
 | 0x0005 | ADVISORY_REGISTRY_REFRESH |
 
----
-
-### 10.1 ADVISORY_NEW (0x0001)
+## 10.1 ADVISORY_NEW (0x0001)
 
 Registers a new alert origin. Receivers MUST add the entry to their local registry and update their stored registry version to `new_registry_version`. In the case nodes receive a valid ADVISORY_NEW packet that collides with the current registry, nodes MUST drop that packet and refuse update, and SHOULD do a full resync of its local origin registry.
 
@@ -469,26 +462,24 @@ Registers a new alert origin. Receivers MUST add the entry to their local regist
 | 0x12   | 8    | origin_key_id        | u64    |
 | 0x1A   | 32   | pubkey_ed25519       | u8[32] |
 
-Minimum packet size: 8 (prefix) + 2 (kind) + 48 (payload) + 64 (signature) = **122 bytes**
+Minimum packet size: 8 (prefix) + 2 (kind) + 48 (payload) + 64 (signature) = 122 bytes
 
----
-
-### 10.2 ADVISORY_REVOKE (0x0002)
+## 10.2 ADVISORY_REVOKE (0x0002)
 
 Emergency revocation of a compromised or rogue alert origin. Receivers MUST immediately remove the identified origin from their local registry and reject any further ALERTs signed by it, regardless of signature validity.
 
-This packet SHOULD have URGENT and PROPAGATE set.
+This packet SHOULD have URGENT and PROPAGATE set to 1.
 
 | Offset | Size | Field                | Type |
 | ------ | ---- | -------------------- | ---- |
 | 0x0A   | 8    | new_registry_version | u64  |
 | 0x12   | 8    | origin_key_id        | u64  |
 
-Minimum packet size: 8 + 2 + 16 + 64 = **90 bytes**
+Minimum packet size: 8 + 2 + 16 + 64 = 90 bytes
 
----
 
-### 10.3 ADVISORY_RETIRE (0x0003)
+
+## 10.3 ADVISORY_RETIRE (0x0003)
 
 Planned decommission of an alert origin. Receivers MUST remove the identified origin from their local registry and update their stored registry version.
 
@@ -499,11 +490,9 @@ Unlike ADVISORY_REVOKE, retirement is planned and does not imply compromise. URG
 | 0x0A   | 8    | new_registry_version | u64  |
 | 0x12   | 8    | origin_key_id        | u64  |
 
-Minimum packet size: **90 bytes**
+Minimum packet size: 90 bytes
 
----
-
-### 10.4 ADVISORY_UPDATE (0x0004)
+## 10.4 ADVISORY_UPDATE (0x0004)
 
 Notifies nodes of a scheduled qdp protocol update. This is advisory only — implementations MAY ignore it. It carries no enforcement.
 
@@ -513,11 +502,9 @@ Notifies nodes of a scheduled qdp protocol update. This is advisory only — imp
 | 0x0B   | 1    | version_minor      | u8   |
 | 0x0C   | 8    | scheduled_update_s | u64  |
 
-Minimum packet size: 8 + 2 + 10 + 64 = **84 bytes**
+Minimum packet size: 8 + 2 + 10 + 64 = 84 bytes
 
----
-
-### 10.5 ADVISORY_REGISTRY_REFRESH (0x0005)
+## 10.5 ADVISORY_REGISTRY_REFRESH (0x0005)
 
 Signals that the registry has been updated and nodes SHOULD re-sync via the info-plane. Carries the authoritative current registry version so receivers can determine whether they are behind.
 
@@ -527,12 +514,12 @@ Signals that the registry has been updated and nodes SHOULD re-sync via the info
 
 Receivers that find their local registry version behind `current_registry_version` SHOULD fetch the full registry from the info-plane.
 
-Minimum packet size: 8 + 2 + 8 + 64 = **82 bytes**
+Minimum packet size: 8 + 2 + 8 + 64 = 82 bytes
 
-## 11. Seeding Model
+# 11. Seeding Model
 
-- **Alert Origin**: signs and issues ALERT packets.
-- **Data Relay**: receives alerts from Alert Origins and performs first-hop seeding into the mesh.
+- Alert Origin: signs and issues ALERT packets.
+- Data Relay: receives alerts from Alert Origins and performs first-hop seeding into the mesh.
 
 Goals:
 
@@ -541,33 +528,25 @@ Goals:
 
 All alert-plane propagation from Alert Origins MUST pass through at least one Data Relay before reaching leaf clients. General qdp coordination packets MAY originate from any node. Transport-specific seeding rules (relay discovery, registration, forwarding topology) are defined in per-transport specifications. See ipqdp.
 
----
-
-## 12. Freshness and Replay Windows
+# 12. Freshness and Replay Windows
 
 REQUIRED cache length:
 
 - Replay cache duration ≥ ttl_s
 
----
-
-## 13. Transport Constraints
+# 13. Transport Constraints
 
 Transport-specific constraints such as NAT traversal, port binding, and client keepalive are defined in per-transport specifications. See ipqdp for IP-specific behavior.
 
----
-
-## 14. Security Notes
+# 14. Security Notes
 
 - Only authorized origin keys (per local Origin Registry + local policy) can create valid ALERTs.
 - Relay compromise cannot forge alerts unless it steals an origin private key.
 - Implementations SHOULD rate-limit verification.
 
----
+# 15. Compliance Targets
 
-## 15. Compliance Targets
-
-### Relay MUST
+## Relay MUST
 
 - Bounds-check packets
 - Resolve `origin_key_id` via Origin Registry
@@ -576,42 +555,38 @@ Transport-specific constraints such as NAT traversal, port binding, and client k
 - Enforce replay protection
 - Forward immutable packets
 
-### Client MUST
+## Client MUST
 
 - Bounds-check packets
 - Resolve `origin_key_id` via Origin Registry
 - Verify signature
 - Enforce freshness
 
----
-
-## 16. Reference Sizes (ALERT, no TLV)
+# 16. Reference Sizes (ALERT, no TLV)
 
 - Common prefix: 8 bytes
 - ALERT fixed fields: 68 bytes
 - Signature block: 72 bytes
-- **Total:** 148 bytes
+- Total: 148 bytes
 
----
-
-## 17. Origin Registry Format
+# 17. Origin Registry Format
 
 This section defines a simple local file or in-memory region that maps `origin_key_id` → public key.
 
 This file is NOT transmitted on the alert-plane. How it is distributed/updated is out of scope.
 
-### 17.1 Top-level structure
+## 17.1 Top-level structure
 
 - `registry_version`: u64, used to manage deltas and versions. This MUST match the newest version that the node has obtained, either via a sync or ADVISORY.
 
-### 17.2 Origin Entry
+## 17.2 Origin Entry
 
 Each entry MUST contain:
 
 - `origin_key_id`: integer (must fit u64)
 - `pubkey`: Raw Ed25519 public key (32 bytes)
 
-### 17.3 Required receiver behavior (authorization)
+## 17.3 Required receiver behavior (authorization)
 
 Receivers MUST:
 
@@ -619,39 +594,20 @@ Receivers MUST:
 - Verify Ed25519 signature using the registry pubkey.
 - Remove origins immediately upon receiving a valid ADVISORY_REVOKE or ADVISORY_RETIRE signed by the master origin.
 
----
+# 18. Transportation and auxiliary infrastructure
 
-## 18. System Requirements
+qdp only declares the common protocol which all devices using qdp must be able to parse. Therefore info-plane schemas, key distribution, and propagation will be medium-dependent.
+There are other specifications that are dependent on the medium, such as:
 
-### 18.1 Minimum System Requirements
-
-- CPU
-  - 32-bit ALU capable of 32-bit arithmetic
-- Memory
-  - At least 1024 bytes of stack space
-
-### 18.2 Recommended System Requirements
-
-- CPU
-  - 32-bit ALU capable of 32-bit arithmetic
-- Memory
-  - At least 2048 bytes of stack space
-  - At least 255 bytes of dynamic heap space(Vector TLV storage)
-- Other
-  - Geolocation awareness to reject false alerts
-    - This is just in case an alert relay decides to send qdp packets to unaffected regions.
-
----
-
-## 19. Transportation and auxiliary infrastructure
-
-- qdp only declares the common protocol which all devices using qdp must be able to parse.
-- Info-plane schemas, key distribution, and propagation will be medium-dependent.
-- There are other specifications that are dependent on the medium, such as:
   - ipqdp: a mesh propagation network over TCP/UDP/IP. Defines HELLO, RESYNC, and other IP-specific behavior. The primary distribution method.
   - loraqdp: qdp over raw LoRa radio. Targets long-range, low-bandwidth deployment on constrained hardware.
-  - Other mediums may distribute qdp natively with medium-specific framing. The auxiliary data may change, but the qdp packet itself will be preserved.
 
----
+Other mediums may distribute qdp natively with medium-specific framing. The auxiliary data may change, but the qdp packet itself will be preserved.
 
-**END OF SPEC**
+# Security Considerations
+
+
+
+# IANA Considerations
+
+This document has no IANA actions.
