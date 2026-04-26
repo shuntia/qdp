@@ -195,7 +195,7 @@ Bit numbering: Bit 0 is the most significant bit (MSB).
 | Offset | Size | Field              | Type   |
 | ------ | ---- | ------------------ | ------ |
 | 0x08   | 8    | timestamp_s        | u64    |
-| 0x10   | 16   | event_root_id      | u8[16] |
+| 0x10   | 16   | event_id           | u8[16] |
 | 0x20   | 2    | seq                | u16    |
 | 0x22   | 2    | ttl_s              | u16    |
 | 0x24   | 1    | hazard_major       | u8     |
@@ -215,7 +215,7 @@ Bit numbering: Bit 0 is the most significant bit (MSB).
 Field descriptions:
 
 - `timestamp_s`: The time this alert was issued
-- `event_root_id`: The root ID that this event has. Subsequent updates or queries to a database will utilze this specific key.
+- `event_id`: The root ID that this event has. Subsequent updates or queries to a database will utilze this specific key.
 - `ttl_s`: The baseline amount of time relays SHOULD propagate for.
 - `hazard_major`, `hazard_minor`, `urgency`, `certainty`, `response`: Specified in §5.
 - `onset_s`: When the alert becomes active
@@ -331,7 +331,7 @@ NOTE: additional `hazard_minor` values are to be determined. Should be able to c
 
 # 6. Event Identity and Updates
 
-- `event_root_id` identifies a physical event.
+- `event_id` identifies a physical event.
 - `seq` is monotonic per event, starting from 0.
 - `seq` MUST NOT overflow. In the case `seq` reaches 65534, the origin MUST cancel that alert and re-issue another alert with a different ID if it needs to issue an update that is not CANCEL.
   - This means that all ALERT packets with `seq` 65535 MUST be CANCEL alerts.
@@ -344,11 +344,11 @@ Receiver rules:
 
 Deduplication state per event:
 
-    (origin_key_id, event_root_id) → highest_seq: u16
+    (origin_key_id, event_id) → highest_seq: u16
 
 ## 6.1 CANCEL Semantics
 
-A packet with the CANCEL flag set cancels the event identified by `event_root_id`.
+A packet with the CANCEL flag set cancels the event identified by `event_id`.
 
 - CANCEL packets MUST carry a `seq` strictly greater than the highest previously accepted `seq` for that event.
 - Upon accepting a CANCEL, receivers MUST immediately expire the event and cease acting on it.
