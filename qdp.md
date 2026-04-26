@@ -27,13 +27,13 @@ ipr: trust200902
 
 --- abstract
 
-This document describes qdp, a transport-agnostic compact binary wire protocol used for emergency alerts under contrained hardware and lossy networks. It is designed to reach farther and quicker than OASIS {{CAP}}, which tries to deliver full human-readable information at the cost of complexity. It primarily uses fixed fields, with support for TLVs when more expressiveness is required. It also has a mandatory signature to prevent fake alerts propagating through a mesh.
+This document describes qdp, a transport-agnostic compact binary wire protocol used for emergency alerts under constrained hardware and lossy networks. It is designed to reach farther and quicker than OASIS {{CAP}}, which tries to deliver full human-readable information at the cost of complexity. It primarily uses fixed fields, with support for TLVs when more expressiveness is required. It also has a mandatory signature to prevent fake alerts propagating through a mesh.
 
 --- middle
 
 # Introduction
 
-The current emergency alert infrastructure, {{CAP}} is flexible and widely deployed, but the structure inherently bears complexity which may fail under extreme conditions such as lossy networks and overloaded devices(i.e. potential outcomes of emergency situations).
+The current emergency alert infrastructure, {{CAP}} is flexible and widely deployed, but the structure inherently bears complexity which may fail under extreme conditions such as lossy networks and overloaded devices (i.e. potential outcomes of emergency situations).
 
 This document defines a protocol aimed to be maximally resilient, distributed, and lightweight to mitigate those points.
 
@@ -79,7 +79,7 @@ This document defines a protocol aimed to be maximally resilient, distributed, a
   - Allow future extensions without breaking existing implementations
 
 - Strong authenticity
-  - Alerts are valid only if signed by a Alert Origin key
+  - Alerts are valid only if signed by an Alert Origin key
   - Relay “trust” does not imply alert validity
 
 - no_std / zero-copy friendly
@@ -128,12 +128,12 @@ qdp uses a two-level versioning scheme to distinguish wire incompatibility from 
 
 ## 1.4 Geographic Encoding
 
-Latitude and longitude are signed `i32` microdegrees (1e-6 degrees).
+Latitude and longitude are signed `i32` in 100-nanodegree units (1e-7 degrees).
 
 Ranges:
 
-- latitude: −90_000_000 … +90_000_000
-- longitude: −180_000_000 … +180_000_000
+- latitude: −900_000_000 … +900_000_000
+- longitude: −1_800_000_000 … +1_800_000_000
 
 ## 1.5 Distance
 
@@ -148,7 +148,7 @@ Distance is encoded as 10-meter units:
 
 - ALERT validity requires:
   1. A valid Ed25519 signature, AND
-  2. The signing key being present in the local Origin Registry (registry format defined in §17).
+  2. The signing key being present in the local Origin Registry (registry format defined in §16).
 - On-wire packets DO NOT embed public keys in v1.0.
 - The packet identifies the signing key by `origin_key_id`.
 
@@ -209,13 +209,13 @@ Bit numbering: Bit 0 is the most significant bit (MSB).
 Field descriptions:
 
 - `timestamp_s`: The time this alert was issued
-- `event_id`: The root ID that this event has. Subsequent updates or queries to a database will utilze this specific key.
+- `event_id`: The root ID that this event has. Subsequent updates or queries to a database will utilize this specific key.
 - `ttl_s`: The baseline amount of time relays SHOULD propagate for.
 - `hazard_major`, `hazard_minor`, `urgency`, `certainty`, `response`: Specified in §5.
 - `onset_s`: When the alert becomes active
 - `expiry_s`: When the alert expires
 - `effective_time_s`: When the event actually occurred or will occur
-- `epicenter_lat`, `epicenter_lon`: The latitude and longitude of the epicenter, divided by 1e7.
+- `epicenter_lat`, `epicenter_lon`: Epicenter coordinates in 100-nanodegree units (see §1.4).
 - `radius_10m`: Affected radius used for propagation decisions (see §8.2)
 
 Deriving signed_tlv bounds:
@@ -231,7 +231,7 @@ Immediately follows `signed_tlv`:
 
 | Field         | Size | Description                                             |
 | ------------- | ---- | ------------------------------------------------------- |
-| origin_key_id | 4    | Identifies the signing key in the Origin Registry (§17) |
+| origin_key_id | 4    | Identifies the signing key in the Origin Registry (§16) |
 | signature     | 64   | Ed25519 signature                                       |
 
 - Algorithm: Ed25519 (required)
@@ -246,7 +246,7 @@ For advanced meanings of these values, refer to the OASIS {{CAP}} specs §3.2.2.
 
 NOTE: additional `hazard_minor` values are to be determined. Should be able to convert from all preexisting CAP messages which have been produced using this table.
 
-## 5.1 Hazard tables
+## 5.1 Hazard Tables
 
 | hazard_major | hazard_minor | Meaning                |
 | ------------ | ------------ | ---------------------- |
@@ -367,7 +367,7 @@ TLVs:
 - 0x02 POLYGON ((i32, i32)[])
   - POLYGON MUST contain no less than 3 points and no more than 8 points.
   - POLYGON points MUST be closed, and MUST be ordered in a counterclockwise fashion, abiding to {{GeoJSON}}.
-  - POLYGON points MUST be the latitude and longitude of the point divided by 1e7.
+  - POLYGON points MUST be the latitude and longitude of the point in 100-nanodegree units (see §1.4).
 - 0x03 REPLACES (u32[])
   - This is for when an alert origin issues an alert which may replace another for a variety of reasons, such as prevention of `seq` overflow, merging of two alerts, etc. An alert replacing another SHOULD be marked as URGENT.
 
@@ -392,7 +392,7 @@ Conceptual rule:
 - Stateless fan-out
 - Medium-dependent congestion control
 
-## 8.4 Forwarding exceptions
+## 8.4 Forwarding Exceptions
 
 Under any of the conditions specified below, alerts MAY be propagated regardless of ttl and geographic bounding.
 
@@ -402,7 +402,7 @@ Under any of the conditions specified below, alerts MAY be propagated regardless
 
 # 9. Non-ALERT packets
 
-## 9.1 Fixed headers
+## 9.1 Fixed Headers
 
 | Offset | Size | Field           | Type |
 | ------ | ---- | --------------- | ---- |
@@ -428,7 +428,7 @@ The table of reservations for qdp 1.0 is as follows.
 
 # 10. Non-ALERT reserved packet kinds
 
-All packets with `kind` in the qdp core range (0x0001–0x00FF) are master origin advisories and MUST be signed by the compiled-in master origin key(distribution is out of band, and master key rotation will need an update). Signing is determined by `kind`, not by a flag.
+All packets with `kind` in the qdp core range (0x0001–0x00FF) are master origin advisories and MUST be signed by the compiled-in master origin key (distribution is out of band, and master key rotation will need an update). Signing is determined by `kind`, not by a flag.
 
 Receivers MUST:
 
@@ -470,7 +470,7 @@ Minimum packet size: 8 (prefix) + 2 (kind) + 44 (payload) + 64 (signature) = 118
 
 Emergency revocation of a compromised or rogue alert origin. Receivers MUST immediately remove the identified origin from their local registry and reject any further ALERTs signed by it, regardless of signature validity.
 
-This packet SHOULD have URGENT and PROPAGATE set to 1.
+This packet SHOULD have URGENT set.
 
 | Offset | Size | Field                | Type |
 | ------ | ---- | -------------------- | ---- |
@@ -569,7 +569,7 @@ This section defines a simple local file or in-memory region that maps `origin_k
 
 This file is NOT transmitted on the alert-plane. How it is distributed/updated is out of scope.
 
-## 16.1 Top-level structure
+## 16.1 Top-Level Structure
 
 - `registry_version`: u64, used to manage deltas and versions. This MUST match the newest version that the node has obtained, either via a sync or ADVISORY.
 
@@ -580,7 +580,7 @@ Each entry MUST contain:
 - `origin_key_id`: integer (must fit u32)
 - `pubkey`: Raw Ed25519 public key (32 bytes)
 
-## 16.3 Required receiver behavior (authorization)
+## 16.3 Required Receiver Behavior (Authorization)
 
 Receivers MUST:
 
@@ -592,7 +592,7 @@ Receivers MUST:
 
 Although qdp alerts are made to be usable in any region, nations SHOULD isolate their mesh against potential attacks by neighboring nations via a false alert. In such cases, nations SHOULD compile in their own keys for their nation, and isolate their trust system.
 
-# 18. Transportation and auxiliary infrastructure
+# 18. Transportation and Auxiliary Infrastructure
 
 qdp only declares the common protocol which all devices using qdp must be able to parse. Therefore info-plane schemas, key distribution, and propagation will be medium-dependent. There are other specifications that are dependent on the medium, such as IP.
 Other mediums may distribute qdp natively with medium-specific framing. The auxiliary data may change, but the qdp packet itself will be preserved.
