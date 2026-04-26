@@ -20,7 +20,9 @@ informative:
       org: OASIS
   UDP: RFC0768
   IP: RFC0791
+
   <!--Maybe add LoRa, TCP, and RFC for network byte order-->
+
 ipr: trust200902
 
 # qdp — Quake (and Disaster) Datagram Protocol
@@ -152,8 +154,6 @@ Distance is encoded as 10-meter units:
 - On-wire packets DO NOT embed public keys in v1.0.
 - The packet identifies the signing key by `origin_key_id`.
 
-
-
 # 2. Common Prefix (All Packets)
 
 Total size: 8 bytes
@@ -171,46 +171,42 @@ Notes:
 - The signed region is `[0x00, packet_len − 64)` for signed packets.
 - The signature is always the last 64 bytes of signed packets.
 
-
-
 # 3. Flags
 
 Bit numbering: Bit 0 is the most significant bit (MSB).
 
-| Bit  | Name      | Meaning                                    |
-| ---- | --------- | ------------------------------------------ |
-| 0    | ALERT     | This is an ALERT packet                    |
-| 1    | URGENT    | Forward with priority                      |
-| 2    | UPDATE    | Revision of existing event                 |
-| 3    | CANCEL    | Cancels an existing event                  |
-| 4    | TEST      | Test alert                                 |
-| 5–15 | RESERVED  | Unused in v1; MUST be ignored by receivers |
-
-
+| Bit  | Name     | Meaning                                    |
+| ---- | -------- | ------------------------------------------ |
+| 0    | ALERT    | This is an ALERT packet                    |
+| 1    | URGENT   | Forward with priority                      |
+| 2    | UPDATE   | Revision of existing event                 |
+| 3    | CANCEL   | Cancels an existing event                  |
+| 4    | TEST     | Test alert                                 |
+| 5–15 | RESERVED | Unused in v1; MUST be ignored by receivers |
 
 # 4. ALERT Packet
 
 ## 4.1 Fixed ALERT Fields
 
-| Offset | Size | Field              | Type  |
-| ------ | ---- | ------------------ | ----- |
-| 0x08   | 8    | timestamp_s        | u64   |
-| 0x10   | 4    | event_id           | u32   |
-| 0x14   | 2    | seq                | u16   |
-| 0x16   | 2    | ttl_s              | u16   |
-| 0x18   | 1    | hazard_major       | u8    |
-| 0x19   | 1    | hazard_minor       | u8    |
-| 0x1A   | 1    | urgency            | u8    |
-| 0x1B   | 1    | severity           | u8    |
-| 0x1C   | 1    | certainty          | u8    |
-| 0x1D   | 1    | response           | u8    |
-| 0x1E   | 8    | onset_s            | u64   |
-| 0x26   | 8    | expiry_s           | u64   |
-| 0x2E   | 8    | effective_time_s   | u64   |
-| 0x36   | 4    | epicenter_lat      | i32   |
-| 0x3A   | 4    | epicenter_lon      | i32   |
-| 0x3E   | 2    | radius_10m         | u16   |
-| 0x40   | N    | signed_tlv         | bytes |
+| Offset | Size | Field            | Type  |
+| ------ | ---- | ---------------- | ----- |
+| 0x08   | 8    | timestamp_s      | u64   |
+| 0x10   | 4    | event_id         | u32   |
+| 0x14   | 2    | seq              | u16   |
+| 0x16   | 2    | ttl_s            | u16   |
+| 0x18   | 1    | hazard_major     | u8    |
+| 0x19   | 1    | hazard_minor     | u8    |
+| 0x1A   | 1    | urgency          | u8    |
+| 0x1B   | 1    | severity         | u8    |
+| 0x1C   | 1    | certainty        | u8    |
+| 0x1D   | 1    | response         | u8    |
+| 0x1E   | 8    | onset_s          | u64   |
+| 0x26   | 8    | expiry_s         | u64   |
+| 0x2E   | 8    | effective_time_s | u64   |
+| 0x36   | 4    | epicenter_lat    | i32   |
+| 0x3A   | 4    | epicenter_lon    | i32   |
+| 0x3E   | 2    | radius_10m       | u16   |
+| 0x40   | N    | signed_tlv       | bytes |
 
 Field descriptions:
 
@@ -600,21 +596,17 @@ Although qdp alerts are made to be usable in any region, nations SHOULD isolate 
 
 # 18. Transportation and auxiliary infrastructure
 
-qdp only declares the common protocol which all devices using qdp must be able to parse. Therefore info-plane schemas, key distribution, and propagation will be medium-dependent.
-There are other specifications that are dependent on the medium, such as:
-
-  - ipqdp: a mesh propagation network over TCP/UDP/IP. Defines HELLO, RESYNC, and other IP-specific behavior. The primary distribution method.
-  - loraqdp: qdp over raw LoRa radio. Targets long-range, low-bandwidth deployment on constrained hardware.
-
+qdp only declares the common protocol which all devices using qdp must be able to parse. Therefore info-plane schemas, key distribution, and propagation will be medium-dependent. There are other specifications that are dependent on the medium, such as IP.
 Other mediums may distribute qdp natively with medium-specific framing. The auxiliary data may change, but the qdp packet itself will be preserved.
 
 # Security Considerations
 
 The security and validity of qdp effectively relies on a single master key, which should be kept airtight, preferably using an HSM or equivalent security measure. If the master key is compromised, then a large-scale firmware update would be necessary for resetting keys.
-<!--I might add an ADVISORY_MASTER that has a ROOT key. That's for tomorrow, I guess.-->
+
 Alert origins should keep their private keys secure, but in the case of a compromise, the master key should be able to revoke the compromised key fairly quickly.
 Malicious alert relays will not be able to issue alerts or affect another node unless they have a origin private key, and complying implementations will be able to drop invalid packets either forged by a node or replayed from a previous time.
 A malicious fleet of relays can "dilute" the mesh depending on the medium. On mediums such as IP, if a fleet of relays register but drop packets on a real emergency alert, they may degrade the resilience of the network.
+A malicious fleet of relays will be able to effectively do a DoS attack on a relay to overwhelm its ability to process and validate the costly Ed25519 signature.
 
 # IANA Considerations
 
