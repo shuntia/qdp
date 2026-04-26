@@ -428,13 +428,14 @@ The table of reservations for qdp 1.0 is as follows.
 
 # 10. Non-ALERT reserved packet kinds
 
-All packets with `kind` in the qdp core range (0x0001–0x00FF) are master origin advisories and MUST be signed by the compiled-in master origin key (distribution is out of band, and master key rotation will need an update). Signing is determined by `kind`, not by a flag.
+All ADVISORY packets MUST be signed by the master origin key. Signing is determined by `kind`, not by a flag.
 
 Receivers MUST:
 
-- Verify the Ed25519 signature over the signed region `[0x00, packet_len − 64)`.
+- Verify the Ed25519 signature over the signed region `[0x00, packet_len − 64)` if they exist.
 - Drop the packet if verification fails.
 - Drop the packet if `kind` is unknown.
+- Drop the packet if `new_registry_version` is less than or equal to its own registry's version.
 
 ## Advisory Signature Block
 
@@ -571,7 +572,7 @@ This file is NOT transmitted on the alert-plane. How it is distributed/updated i
 
 ## 16.1 Top-Level Structure
 
-- `registry_version`: u64, used to manage deltas and versions. This MUST match the newest version that the node has obtained, either via a sync or ADVISORY.
+- `registry_version`: u64, used to manage deltas and versions. The registry version MUST monotonically increase. This MUST match the newest version that the node has obtained, either via a sync or ADVISORY.
 
 ## 16.2 Origin Entry
 
