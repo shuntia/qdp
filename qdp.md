@@ -306,10 +306,10 @@ NOTE: additional `hazard_minor` values are to be determined. Should be able to c
 | Value | Meaning           |
 | ----- | ----------------- |
 | 0     | RESERVED(invalid) |
-| 1     | Extreme           |
-| 2     | Minor             |
-| 3     | Moderate          |
-| 4     | Severe            |
+| 1     | Minor             |
+| 2     | Moderate          |
+| 3     | Severe            |
+| 4     | Extreme           |
 | 5     | Unknown           |
 
 ## 5.5 Certainty
@@ -317,10 +317,10 @@ NOTE: additional `hazard_minor` values are to be determined. Should be able to c
 | Value | Meaning           |
 | ----- | ----------------- |
 | 0     | RESERVED(invalid) |
-| 1     | Likely            |
-| 2     | Observed          |
+| 1     | Unlikely          |
+| 2     | Likely            |
 | 3     | Possible          |
-| 4     | Unlikely          |
+| 4     | Observed          |
 | 5     | Unknown           |
 
 # 6. Event Identity and Updates
