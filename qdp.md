@@ -192,25 +192,25 @@ Bit numbering: Bit 0 is the most significant bit (MSB).
 
 ## 4.1 Fixed ALERT Fields
 
-| Offset | Size | Field              | Type   |
-| ------ | ---- | ------------------ | ------ |
-| 0x08   | 8    | timestamp_s        | u64    |
-| 0x10   | 16   | event_id           | u8[16] |
-| 0x20   | 2    | seq                | u16    |
-| 0x22   | 2    | ttl_s              | u16    |
-| 0x24   | 1    | hazard_major       | u8     |
-| 0x25   | 1    | hazard_minor       | u8     |
-| 0x26   | 1    | urgency            | u8     |
-| 0x27   | 1    | severity           | u8     |
-| 0x28   | 1    | certainty          | u8     |
-| 0x29   | 1    | response           | u8     |
-| 0x2A   | 8    | onset_s            | u64    |
-| 0x32   | 8    | expiry_s           | u64    |
-| 0x3A   | 8    | effective_time_s   | u64    |
-| 0x42   | 4    | epicenter_lat      | i32    |
-| 0x46   | 4    | epicenter_lon      | i32    |
-| 0x4A   | 2    | radius_10m         | u16    |
-| 0x4C   | N    | signed_tlv         | bytes  |
+| Offset | Size | Field              | Type  |
+| ------ | ---- | ------------------ | ----- |
+| 0x08   | 8    | timestamp_s        | u64   |
+| 0x10   | 4    | event_id           | u32   |
+| 0x14   | 2    | seq                | u16   |
+| 0x16   | 2    | ttl_s              | u16   |
+| 0x18   | 1    | hazard_major       | u8    |
+| 0x19   | 1    | hazard_minor       | u8    |
+| 0x1A   | 1    | urgency            | u8    |
+| 0x1B   | 1    | severity           | u8    |
+| 0x1C   | 1    | certainty          | u8    |
+| 0x1D   | 1    | response           | u8    |
+| 0x1E   | 8    | onset_s            | u64   |
+| 0x26   | 8    | expiry_s           | u64   |
+| 0x2E   | 8    | effective_time_s   | u64   |
+| 0x36   | 4    | epicenter_lat      | i32   |
+| 0x3A   | 4    | epicenter_lon      | i32   |
+| 0x3E   | 2    | radius_10m         | u16   |
+| 0x40   | N    | signed_tlv         | bytes |
 
 Field descriptions:
 
@@ -221,15 +221,15 @@ Field descriptions:
 - `onset_s`: When the alert becomes active
 - `expiry_s`: When the alert expires
 - `effective_time_s`: When the event actually occurred or will occur
-- `epicenter_lat`, `epicenter_lon`: The latitude and longitude of the epicenter.
+- `epicenter_lat`, `epicenter_lon`: The latitude and longitude of the epicenter, divided by 1e7.
 - `radius_10m`: Affected radius used for propagation decisions (see §8.2)
 
 Deriving signed_tlv bounds:
 The signed TLV block has no explicit length field. Bounds are derived from the transport-provided packet length:
 
-- `signed_tlv` starts at offset `0x4C`
-- `signed_tlv` ends at `packet_len − 72` (72 = 8 origin_key_id + 64 signature)
-- Receivers MUST validate: `packet_len ≥ 0x4C + 72` (i.e., `packet_len ≥ 148`)
+- `signed_tlv` starts at offset `0x40`
+- `signed_tlv` ends at `packet_len − 68` (68 = 4 origin_key_id + 64 signature)
+- Receivers MUST validate: `packet_len ≥ 0x40 + 68` (i.e., `packet_len ≥ 132`)
 
 ## 4.2 Signature Block
 
@@ -237,7 +237,7 @@ Immediately follows `signed_tlv`:
 
 | Field         | Size | Description                                             |
 | ------------- | ---- | ------------------------------------------------------- |
-| origin_key_id | 8    | Identifies the signing key in the Origin Registry (§17) |
+| origin_key_id | 4    | Identifies the signing key in the Origin Registry (§17) |
 | signature     | 64   | Ed25519 signature                                       |
 
 - Algorithm: Ed25519 (required)
@@ -333,8 +333,7 @@ NOTE: additional `hazard_minor` values are to be determined. Should be able to c
 
 - `event_id` identifies a physical event.
 - `seq` is monotonic per event, starting from 0.
-- `seq` MUST NOT overflow. In the case `seq` reaches 65534, the origin MUST cancel that alert and re-issue another alert with a different ID if it needs to issue an update that is not CANCEL.
-  - This means that all ALERT packets with `seq` 65535 MUST be CANCEL alerts.
+- `seq` MUST NOT overflow. In the case `seq` reaches 65535, the origin MUST re-issue an alert with a REPLACES TLV, and that alert SHOULD be URGENT.
 
 Receiver rules:
 
@@ -371,10 +370,12 @@ TLVs:
 
 - 0x00 UNUSED
 - 0x01 HAZARD_NAME (UTF-8)
-- 0x02 CAP_ID (UTF-8)
-- 0x03 POLYGON ((i32, i32)[])
-  - POLYGON MUST contain no less than 3 points and no more than 8 points, to prevent .
-- 0x04 REPLACE ((u))
+- 0x02 POLYGON ((i32, i32)[])
+  - POLYGON MUST contain no less than 3 points and no more than 8 points.
+  - POLYGON points MUST be closed, and MUST be ordered in a counterclockwise fashion.
+  - POLYGON points MUST be the latitude and longitude of the point divided by 1e7.
+- 0x03 REPLACES (u32[])
+  - This is for when an alert origin issues an alert which may replace another for a variety of reasons, such as prevention of `seq` overflow, merging of two alerts, etc. An alert replacing another SHOULD be marked as URGENT.
 
 # 8. Forwarding Semantics (ALERT)
 
@@ -387,17 +388,23 @@ Conceptual rule:
     age_s = now_s − timestamp_s
     if age_s > ttl_s → SHOULD NOT forward
 
-Packets are immutable; relays MUST NOT modify signed bytes.
-
 ## 8.2 Geographic Bounding
 
 - Relays SHOULD drop packets outside `radius_10m × 10` meters.
-- Backbone relays MAY override.
+  - If a relay does not know its own location, it MUST propagate.
 
 ## 8.3 Forwarding Strategy
 
 - Stateless fan-out
 - Medium-dependent congestion control
+
+## 8.4 Forwarding exceptions
+
+Under any of the conditions specified below, alerts MAY be propagated regardless of ttl and geographic bounding.
+
+- When a relay has a record of that specific event ID in its cache and it receives an alert with higher `seq`.
+- When a relay is unsure of its own time, or if it may have a skewed clock for any reason.
+- When a transport medium is known to have a slow transport speed.
 
 # 9. Non-ALERT packets
 
@@ -460,10 +467,10 @@ Registers a new alert origin. Receivers MUST add the entry to their local regist
 | Offset | Size | Field                | Type   |
 | ------ | ---- | -------------------- | ------ |
 | 0x0A   | 8    | new_registry_version | u64    |
-| 0x12   | 8    | origin_key_id        | u64    |
-| 0x1A   | 32   | pubkey_ed25519       | u8[32] |
+| 0x12   | 4    | origin_key_id        | u32    |
+| 0x16   | 32   | pubkey_ed25519       | u8[32] |
 
-Minimum packet size: 8 (prefix) + 2 (kind) + 48 (payload) + 64 (signature) = 122 bytes
+Minimum packet size: 8 (prefix) + 2 (kind) + 44 (payload) + 64 (signature) = 118 bytes
 
 ## 10.2 ADVISORY_REVOKE (0x0002)
 
@@ -474,9 +481,9 @@ This packet SHOULD have URGENT and PROPAGATE set to 1.
 | Offset | Size | Field                | Type |
 | ------ | ---- | -------------------- | ---- |
 | 0x0A   | 8    | new_registry_version | u64  |
-| 0x12   | 8    | origin_key_id        | u64  |
+| 0x12   | 4    | origin_key_id        | u32  |
 
-Minimum packet size: 8 + 2 + 16 + 64 = 90 bytes
+Minimum packet size: 8 + 2 + 12 + 64 = 86 bytes
 
 ## 10.3 ADVISORY_RETIRE (0x0003)
 
@@ -487,9 +494,9 @@ Unlike ADVISORY_REVOKE, retirement is planned and does not imply compromise. URG
 | Offset | Size | Field                | Type |
 | ------ | ---- | -------------------- | ---- |
 | 0x0A   | 8    | new_registry_version | u64  |
-| 0x12   | 8    | origin_key_id        | u64  |
+| 0x12   | 4    | origin_key_id        | u32  |
 
-Minimum packet size: 90 bytes
+Minimum packet size: 86 bytes
 
 ## 10.4 ADVISORY_UPDATE (0x0004)
 
@@ -558,9 +565,9 @@ Transport-specific constraints such as NAT traversal, port binding, and client k
 # 15. Reference Sizes (ALERT, no TLV)
 
 - Common prefix: 8 bytes
-- ALERT fixed fields: 68 bytes
-- Signature block: 72 bytes
-- Total: 148 bytes
+- ALERT fixed fields: 56 bytes
+- Signature block: 68 bytes
+- Total: 132 bytes
 
 # 16. Origin Registry Format
 
@@ -576,7 +583,7 @@ This file is NOT transmitted on the alert-plane. How it is distributed/updated i
 
 Each entry MUST contain:
 
-- `origin_key_id`: integer (must fit u64)
+- `origin_key_id`: integer (must fit u32)
 - `pubkey`: Raw Ed25519 public key (32 bytes)
 
 ## 16.3 Required receiver behavior (authorization)
