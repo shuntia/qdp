@@ -20,9 +20,6 @@ informative:
       org: OASIS
   UDP: RFC0768
   IP: RFC0791
-
-  <!--Maybe add LoRa, TCP, and RFC for network byte order-->
-
 ipr: trust200902
 
 # qdp — Quake (and Disaster) Datagram Protocol
