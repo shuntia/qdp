@@ -18,19 +18,22 @@ informative:
       org: Warning Systems. Inc.
       -
       org: OASIS
+  UDP: RFC0768
+  IP: RFC0791
+  <!--Maybe add LoRa, TCP, and RFC for network byte order-->
 ipr: trust200902
 
 # qdp — Quake (and Disaster) Datagram Protocol
 
 --- abstract
 
-This document describes qdp, a transport-agnostic compact binary wire protocol used for emergency alerts under contrained hardware and lossy networks. It is designed to reach farther and quicker than [OASIS CAP](https://docs.oasis-open.org/emergency/cap/v1.2/CAP-v1.2-os.html), which tries to deliver full human-readable information at the cost of complexity.
+This document describes qdp, a transport-agnostic compact binary wire protocol used for emergency alerts under contrained hardware and lossy networks. It is designed to reach farther and quicker than OASIS {{CAP}}, which tries to deliver full human-readable information at the cost of complexity. It primarily uses fixed fields, with support for TLVs when more expressiveness is required. It also has a mandatory signature to prevent fake alerts propagating through a mesh.
 
 --- middle
 
 # Introduction
 
-The current emergency alert infrastructure, CAP(Common Alert Protocol) is flexible and widely deployed, but the structure inherently bears complexity which may fail under extreme conditions such as lossy networks and overloaded devices(i.e. potential outcomes of emergency situations).
+The current emergency alert infrastructure, {{CAP}} is flexible and widely deployed, but the structure inherently bears complexity which may fail under extreme conditions such as lossy networks and overloaded devices(i.e. potential outcomes of emergency situations).
 
 This document defines a protocol aimed to be maximally resilient, distributed, and lightweight to mitigate those points.
 
@@ -39,7 +42,7 @@ This document defines a protocol aimed to be maximally resilient, distributed, a
 ## 0.1 Issues of Existing Solutions
 
 - Lack of efficient internationalization
-  - The number of messages multiplies with internationalization.
+  - The size of messages multiply with internationalization.
 - Unbounded
   - On systems that lack proper amounts of available memory, CAP may overwhelm the chip, given that its length is not hard-capped.
 - Centralized
@@ -180,9 +183,8 @@ Bit numbering: Bit 0 is the most significant bit (MSB).
 | 1    | URGENT    | Forward with priority                      |
 | 2    | UPDATE    | Revision of existing event                 |
 | 3    | CANCEL    | Cancels an existing event                  |
-| 4    | PROPAGATE | Eligible for alert-plane forwarding        |
-| 5    | TEST      | Test alert                                 |
-| 6–15 | RESERVED  | Unused in v1; MUST be ignored by receivers |
+| 4    | TEST      | Test alert                                 |
+| 5–15 | RESERVED  | Unused in v1; MUST be ignored by receivers |
 
 
 
@@ -205,16 +207,21 @@ Bit numbering: Bit 0 is the most significant bit (MSB).
 | 0x2A   | 8    | onset_s            | u64    |
 | 0x32   | 8    | expiry_s           | u64    |
 | 0x3A   | 8    | effective_time_s   | u64    |
-| 0x42   | 4    | epicenter_lat_uDeg | i32    |
-| 0x46   | 4    | epicenter_lon_uDeg | i32    |
+| 0x42   | 4    | epicenter_lat      | i32    |
+| 0x46   | 4    | epicenter_lon      | i32    |
 | 0x4A   | 2    | radius_10m         | u16    |
 | 0x4C   | N    | signed_tlv         | bytes  |
 
 Field descriptions:
 
+- `timestamp_s`: The time this alert was issued
+- `event_root_id`: The root ID that this event has. Subsequent updates or queries to a database will utilze this specific key.
+- `ttl_s`: The baseline amount of time relays SHOULD propagate for.
+- `hazard_major`, `hazard_minor`, `urgency`, `certainty`, `response`: Specified in §5.
 - `onset_s`: When the alert becomes active
 - `expiry_s`: When the alert expires
 - `effective_time_s`: When the event actually occurred or will occur
+- `epicenter_lat`, `epicenter_lon`: The latitude and longitude of the epicenter.
 - `radius_10m`: Affected radius used for propagation decisions (see §8.2)
 
 Deriving signed_tlv bounds:
@@ -238,12 +245,10 @@ Immediately follows `signed_tlv`:
 - Receivers MUST resolve `origin_key_id` via the Origin Registry and reject if not present.
 - Receivers MUST verify the signature before acting on any ALERT field.
 
-
-
 # 5. Value Tables
 
 These list the possible values for fields in qdp ALERT packets. Most fields are designed to reflect CAP.
-For advanced meanings of these values, refer to the OASIS [CAP specs](https://docs.oasis-open.org/emergency/cap/v1.2/CAP-v1.2-os.pdf) §3.2.2.
+For advanced meanings of these values, refer to the OASIS {{CAP}} specs §3.2.2.
 
 NOTE: additional `hazard_minor` values are to be determined. Should be able to convert from all preexisting CAP messages which have been produced using this table.
 
@@ -368,7 +373,8 @@ TLVs:
 - 0x01 HAZARD_NAME (UTF-8)
 - 0x02 CAP_ID (UTF-8)
 - 0x03 POLYGON ((i32, i32)[])
-  - POLYGON MUST contain no less than 3 points and no more than 8 points.
+  - POLYGON MUST contain no less than 3 points and no more than 8 points, to prevent .
+- 0x04 REPLACE ((u))
 
 # 8. Forwarding Semantics (ALERT)
 
@@ -388,15 +394,10 @@ Packets are immutable; relays MUST NOT modify signed bytes.
 - Relays SHOULD drop packets outside `radius_10m × 10` meters.
 - Backbone relays MAY override.
 
-## 8.3 PROPAGATE Flag
-
-- If unset, packet MUST NOT be forwarded by an alert relay unless the first hop cannot reasonably reach all subscribed nodes(such as radio meshes with clients requiring.
-
-## 8.4 Forwarding Strategy
+## 8.3 Forwarding Strategy
 
 - Stateless fan-out
-- Rate-limited
-- Random optional jitter
+- Medium-dependent congestion control
 
 # 9. Non-ALERT packets
 

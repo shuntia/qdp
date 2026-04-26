@@ -1,12 +1,21 @@
+author:
+  ins: S. Koga
+  name: Shunta Koga
+  email: shunta@koga.us
+normative:
+  UDP: RFC0768
+  IP: RFC0791
+  <!--Maybe add LoRa, TCP, and RFC for network byte order-->
+  <!--Add NAT DNS Link-local addresses multicast-->
+  <!--Add qdp as normative-->
+ipr: trust200902
+
+
 # ipqdp — qdp over IP
 
-## IP Transport Specification — v1.0 (draft)
+--- abstract
 
-**Author:** shuntia
-**Status:** Draft
-
-**Scope:**
-This document specifies IP-specific behavior for qdp, including NAT traversal, port binding, client registration, relay heartbeats, and bootstrapping. The qdp wire format is unchanged; this document defines how it is carried over UDP/TCP/IP.
+{{qdp}} is a data format protocol; it needs a transport to be able to effectively communicate.
 
 ## Purpose
 
