@@ -20,6 +20,7 @@ informative:
       org: OASIS
   UDP: RFC0768
   IP: RFC0791
+  GeoJSON: RFC7946
 ipr: trust200902
 
 # qdp — Quake (and Disaster) Datagram Protocol
@@ -365,7 +366,7 @@ TLVs:
 - 0x01 HAZARD_NAME (UTF-8)
 - 0x02 POLYGON ((i32, i32)[])
   - POLYGON MUST contain no less than 3 points and no more than 8 points.
-  - POLYGON points MUST be closed, and MUST be ordered in a counterclockwise fashion.
+  - POLYGON points MUST be closed, and MUST be ordered in a counterclockwise fashion, abiding to {{GeoJSON}}.
   - POLYGON points MUST be the latitude and longitude of the point divided by 1e7.
 - 0x03 REPLACES (u32[])
   - This is for when an alert origin issues an alert which may replace another for a variety of reasons, such as prevention of `seq` overflow, merging of two alerts, etc. An alert replacing another SHOULD be marked as URGENT.
