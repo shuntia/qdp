@@ -4,35 +4,33 @@ title: Wire-format Alerting for Risk Notification
 abbrev: WARN
 docname: draft-koga-warn-00
 date: 2026-04-27
-cat: std
+cat: exp
 area: art
 author:
-  ins: S. Koga
-  name: Shunta Koga
-  email: shunta@koga.us
+  - ins: S. Koga
+    name: Shunta Koga
+    email: shunta@koga.us
 informative:
   CAP:
     title: Common Alerting Protocol Version 1.2
     target: https://docs.oasis-open.org/emergency/cap/v1.2/CAP-v1.2-os.html
     date: 2010
     author:
-     - ins: J. Westfall
-       name: Jacob Westfall
-       role:
-     - ins: E. Jones
-       name: Elysa Jones
-       org: Warning Systems. Inc.
-     - org: OASIS
-  UDP: RFC0768
-  IP: RFC0791
-  GeoJSON: RFC7946
+      - ins: J. Westfall
+        name: Jacob Westfall
+      - ins: E. Jones
+        name: Elysa Jones
+        org: Warning Systems. Inc.
+      - org: OASIS
+  RFC7946:
 normative:
-  Ed25519: RFC8032
+  RFC8032:
+submissionType: independent
 ipr: trust200902
 
 --- abstract
 
-This document describes WARN, a transport-agnostic compact binary wire protocol used for emergency alerts under constrained hardware and lossy networks. It is designed to reach farther and quicker than OASIS {{CAP}}, which tries to deliver full human-readable information at the cost of complexity. It primarily uses fixed fields, with support for TLVs when more expressiveness is required. It also has a mandatory signature to prevent fake alerts propagating through a mesh.
+This document describes WARN, a transport-agnostic compact binary wire protocol used for emergency alerts under constrained hardware and lossy networks. It is designed to reach farther and quicker than OASIS CAP, which tries to deliver full human-readable information at the cost of complexity. It primarily uses fixed fields, with support for TLVs when more expressiveness is required. It also has a mandatory signature to prevent fake alerts propagating through a mesh.
 
 --- middle
 
@@ -42,9 +40,9 @@ The current emergency alert infrastructure, {{CAP}} is flexible and widely deplo
 
 This document defines a protocol aimed to be maximally resilient, distributed, and lightweight to mitigate those points.
 
-# 0. Motivation
+# Motivation
 
-## 0.1 Issues of Existing Solutions
+## Issues of Existing Solutions
 
 - Lack of efficient internationalization
   - The size of messages multiply with internationalization.
@@ -65,7 +63,7 @@ This document defines a protocol aimed to be maximally resilient, distributed, a
   - Media interpretation requires mature, complex libraries.
   - Realistically requires a whole OS to be running to make use of CAP.
 
-## 0.2 Design Goals
+## Design Goals
 
 - Minimal alert-plane packet
   - Single UDP datagram
@@ -85,7 +83,7 @@ This document defines a protocol aimed to be maximally resilient, distributed, a
 
 - Strong authenticity
   - Alerts are valid only if signed by an Alert Origin key
-  - Relay “trust” does not imply alert validity
+  - Relay "trust" does not imply alert validity
 
 - no_std / zero-copy friendly
   - Fixed layouts
@@ -98,13 +96,13 @@ This document defines a protocol aimed to be maximally resilient, distributed, a
 - Lightweight
   - Be able to run on minimal hardware
 
-# 1. Definitions and Conventions
+# Definitions and Conventions
 
-## 1.1 Normative Language
+## Normative Language
 
 {::boilerplate bcp14-tagged}
 
-## 1.2 Versioning
+## Versioning
 
 WARN uses a two-level versioning scheme to distinguish wire incompatibility from backward-compatible extensions.
 
@@ -126,12 +124,12 @@ WARN uses a two-level versioning scheme to distinguish wire incompatibility from
   - However, keeping up to date is strongly recommended.
   - Receivers MUST ignore unknown flag bits and unknown TLV types.
 
-## 1.3 Time
+## Time
 
 - UNIX seconds (UTC), `u64`.
 - Method of syncing time is dependent on hardware and medium.
 
-## 1.4 Geographic Encoding
+## Geographic Encoding {#geographic-encoding}
 
 Latitude and longitude are signed `i32` in 100-nanodegree units (1e-7 degrees).
 
@@ -140,41 +138,41 @@ Ranges:
 - latitude: −900_000_000 … +900_000_000
 - longitude: −1_800_000_000 … +1_800_000_000
 
-## 1.5 Distance
+## Distance
 
 Distance is encoded as 10-meter units:
 
 - Stored value: `radius_10m` (`u16`)
 - Real meters: `affected_radius_m = radius_10m × 10`
-- Used for propagation decisions (see §8.2)
+- Used for propagation decisions (see {{geographic-bounding}})
 - A value of 0 indicates "unknown" or "see polygon TLV"
 
-## 1.6 Authority Model
+## Authority Model
 
 - ALERT validity requires:
   1. A valid Ed25519 signature, AND
-  2. The signing key being present in the local Origin Registry (registry format defined in §16).
+  2. The signing key being present in the local Origin Registry (registry format defined in {{origin-registry-format}}).
 - On-wire packets DO NOT embed public keys in v1.0.
 - The packet identifies the signing key by `origin_key_id`.
 
-# 2. Common Prefix (All Packets)
+# Common Prefix (All Packets)
 
 Total size: 8 bytes
 
-| Offset | Size | Field         | Type  | Description               |
-| ------ | ---- | ------------- | ----- | ------------------------- |
-| 0x00   | 4    | magic         | u8[4] | ASCII “WARN”              |
-| 0x04   | 1    | version_major | u8    | v1.0 → 1                  |
-| 0x05   | 1    | version_minor | u8    | v1.0 → 0                  |
-| 0x06   | 2    | flags         | u16   | See §3                    |
-| 0x08   | …    | payload       | -     | ALERT or non-ALERT fields |
+| Offset | Size | Field         | Type    | Description               |
+| ------ | ---- | ------------- | ------- | ------------------------- |
+| 0x00   | 4    | magic         | `u8[4]` | ASCII "WARN"              |
+| 0x04   | 1    | version_major | u8      | v1.0 → 1                  |
+| 0x05   | 1    | version_minor | u8      | v1.0 → 0                  |
+| 0x06   | 2    | flags         | u16     | See {{flags}}             |
+| 0x08   | …    | payload       | -       | ALERT or non-ALERT fields |
 
 Notes:
 
 - The signed region is `[0x00, packet_len − 64)` for signed packets.
 - The signature is always the last 64 bytes of signed packets.
 
-# 3. Flags
+# Flags {#flags}
 
 Bit numbering: Bit 0 is the most significant bit (MSB).
 
@@ -187,9 +185,9 @@ Bit numbering: Bit 0 is the most significant bit (MSB).
 | 4    | TEST     | Test alert                                 |
 | 5–15 | RESERVED | Unused in v1; MUST be ignored by receivers |
 
-# 4. ALERT Packet
+# ALERT Packet
 
-## 4.1 Fixed ALERT Fields
+## Fixed ALERT Fields
 
 | Offset | Size | Field            | Type  |
 | ------ | ---- | ---------------- | ----- |
@@ -216,12 +214,12 @@ Field descriptions:
 - `timestamp_s`: The time this alert was issued
 - `event_id`: The root ID that this event has. Subsequent updates or queries to a database will utilize this specific key.
 - `ttl_s`: The baseline amount of time relays SHOULD propagate for.
-- `hazard_major`, `hazard_minor`, `urgency`, `certainty`, `response`: Specified in §5.
+- `hazard_major`, `hazard_minor`, `urgency`, `certainty`, `response`: Specified in {{value-tables}}.
 - `onset_s`: When the alert becomes active
 - `expiry_s`: When the alert expires
 - `effective_time_s`: When the event actually occurred or will occur
-- `epicenter_lat`, `epicenter_lon`: Epicenter coordinates in 100-nanodegree units (see §1.4).
-- `radius_10m`: Affected radius used for propagation decisions (see §8.2)
+- `epicenter_lat`, `epicenter_lon`: Epicenter coordinates in 100-nanodegree units (see {{geographic-encoding}}).
+- `radius_10m`: Affected radius used for propagation decisions (see {{geographic-bounding}})
 
 Deriving signed_tlv bounds:
 The signed TLV block has no explicit length field. Bounds are derived from the transport-provided packet length:
@@ -230,28 +228,28 @@ The signed TLV block has no explicit length field. Bounds are derived from the t
 - `signed_tlv` ends at `packet_len − 68` (68 = 4 origin_key_id + 64 signature)
 - Receivers MUST validate: `packet_len ≥ 0x40 + 68` (i.e., `packet_len ≥ 132`)
 
-## 4.2 Signature Block
+## Signature Block
 
 Immediately follows `signed_tlv`:
 
-| Field         | Size | Description                                             |
-| ------------- | ---- | ------------------------------------------------------- |
-| origin_key_id | 4    | Identifies the signing key in the Origin Registry (§16) |
-| signature     | 64   | Ed25519 signature                                       |
+| Field         | Size | Description                                                                    |
+| ------------- | ---- | ------------------------------------------------------------------------------ |
+| origin_key_id | 4    | Identifies the signing key in the Origin Registry ({{origin-registry-format}}) |
+| signature     | 64   | Ed25519 signature                                                              |
 
-- Algorithm: Ed25519 (required)
+- Algorithm: Ed25519 {{RFC8032}} (required)
 - Signed region: `[0x00, packet_len − 64)` — covers Common Prefix + ALERT fields + signed_tlv + origin_key_id.
 - Receivers MUST resolve `origin_key_id` via the Origin Registry and reject if not present.
 - Receivers MUST verify the signature before acting on any ALERT field.
 
-# 5. Value Tables
+# Value Tables {#value-tables}
 
 These list the possible values for fields in WARN ALERT packets. Most fields are designed to reflect CAP.
 For advanced meanings of these values, refer to the OASIS {{CAP}} specs §3.2.2.
 
 NOTE: additional `hazard_minor` values are to be determined. Should be able to convert from all preexisting CAP messages which have been produced using this table.
 
-## 5.1 Hazard Tables
+## Hazard Tables
 
 | hazard_major | hazard_minor | Meaning                |
 | ------------ | ------------ | ---------------------- |
@@ -280,7 +278,7 @@ NOTE: additional `hazard_minor` values are to be determined. Should be able to c
 | 0x0B         | 0            | CBRNE Unknown          |
 | 0xFF         | 0            | Other                  |
 
-## 5.2 Response
+## Response
 
 | Value | Meaning           |
 | ----- | ----------------- |
@@ -295,7 +293,7 @@ NOTE: additional `hazard_minor` values are to be determined. Should be able to c
 | 8     | Shelter           |
 | 9     | None              |
 
-## 5.3 Urgency
+## Urgency
 
 | Value | Meaning           |
 | ----- | ----------------- |
@@ -306,7 +304,7 @@ NOTE: additional `hazard_minor` values are to be determined. Should be able to c
 | 4     | Past              |
 | 5     | Unknown           |
 
-## 5.4 Severity
+## Severity
 
 | Value | Meaning           |
 | ----- | ----------------- |
@@ -317,7 +315,7 @@ NOTE: additional `hazard_minor` values are to be determined. Should be able to c
 | 4     | Extreme           |
 | 5     | Unknown           |
 
-## 5.5 Certainty
+## Certainty
 
 | Value | Meaning           |
 | ----- | ----------------- |
@@ -328,7 +326,7 @@ NOTE: additional `hazard_minor` values are to be determined. Should be able to c
 | 4     | Observed          |
 | 5     | Unknown           |
 
-# 6. Event Identity and Updates
+# Event Identity and Updates
 
 - `event_id` identifies a physical event.
 - `seq` is monotonic per event, starting from 0.
@@ -344,7 +342,7 @@ Deduplication state per event:
 
     (origin_key_id, event_id) → highest_seq: u16
 
-## 6.1 CANCEL Semantics
+## CANCEL Semantics
 
 A packet with the CANCEL flag set cancels the event identified by `event_id`.
 
@@ -352,13 +350,13 @@ A packet with the CANCEL flag set cancels the event identified by `event_id`.
 - Upon accepting a CANCEL, receivers MUST immediately expire the event and cease acting on it.
 - The CANCEL's deduplication entry MUST persist in the replay cache for at least `ttl_s` seconds measured from the CANCEL packet's own `timestamp_s`. This prevents late-arriving retransmissions of the original alert from slipping through after the CANCEL entry expires.
 
-# 7. Signed TLV Format
+# Signed TLV Format
 
 TLV layout:
 
 - type: u8
 - len: u8
-- val: u8[len]
+- val: `u8[len]`
 
 Rules:
 
@@ -369,16 +367,16 @@ TLVs:
 
 - 0x00 UNUSED
 - 0x01 HAZARD_NAME (UTF-8)
-- 0x02 POLYGON ((i32, i32)[])
+- 0x02 POLYGON `((i32, i32)[])`
   - POLYGON MUST contain no less than 3 points and no more than 8 points.
   - POLYGON points MUST be closed, and MUST be ordered in a counterclockwise fashion, abiding to {{RFC7946}}.
-  - POLYGON points MUST be the latitude and longitude of the point in 100-nanodegree units (see §1.4).
-- 0x03 REPLACES (u32[])
+  - POLYGON points MUST be the latitude and longitude of the point in 100-nanodegree units (see {{geographic-encoding}}).
+- 0x03 REPLACES `(u32[])`
   - This is for when an alert origin issues an alert which may replace another for a variety of reasons, such as prevention of `seq` overflow, merging of two alerts, etc. An alert replacing another SHOULD be marked as URGENT.
 
-# 8. Forwarding Semantics (ALERT)
+# Forwarding Semantics (ALERT)
 
-## 8.1 Time-Based TTL
+## Time-Based TTL
 
 The `ttl_s` field represents how many seconds the packet is permitted to spread.
 
@@ -387,17 +385,17 @@ Conceptual rule:
     age_s = now_s − timestamp_s
     if age_s > ttl_s → SHOULD NOT forward
 
-## 8.2 Geographic Bounding
+## Geographic Bounding {#geographic-bounding}
 
 - Relays SHOULD drop packets outside `radius_10m × 10` meters.
   - If a relay does not know its own location, it MUST propagate.
 
-## 8.3 Forwarding Strategy
+## Forwarding Strategy
 
 - Stateless fan-out
 - Medium-dependent congestion control
 
-## 8.4 Forwarding Exceptions
+## Forwarding Exceptions
 
 Under any of the conditions specified below, alerts MAY be propagated regardless of ttl and geographic bounding.
 
@@ -405,9 +403,9 @@ Under any of the conditions specified below, alerts MAY be propagated regardless
 - When a relay is unsure of its own time, or if it may have a skewed clock for any reason.
 - When a transport medium is known to have a slow transport speed.
 
-# 9. Non-ALERT packets
+# Non-ALERT Packets
 
-## 9.1 Fixed Headers
+## Fixed Headers
 
 | Offset | Size | Field           | Type |
 | ------ | ---- | --------------- | ---- |
@@ -418,7 +416,7 @@ The `kind` field identifies the packet type. All non-ALERT packets share this he
 
 Receivers MUST silently drop any packet whose `kind` is unknown or whose `kind` belongs to a different transport's range.
 
-## 9.2 WARN Reserved Ranges
+## WARN Reserved Ranges
 
 The table of reservations for WARN 1.0 is as follows.
 
@@ -431,7 +429,7 @@ The table of reservations for WARN 1.0 is as follows.
 | 0xFF00-0xFFFE | Private use       |
 | 0xFFFF        | RESERVED(invalid) |
 
-# 10. Non-ALERT reserved packet kinds
+# Non-ALERT Reserved Packet Kinds
 
 All ADVISORY packets MUST be signed by the master origin key. Signing is determined by `kind`, not by a flag.
 
@@ -460,19 +458,19 @@ Immediately follows the kind-specific payload:
 | 0x0004 | ADVISORY_UPDATE           |
 | 0x0005 | ADVISORY_REGISTRY_REFRESH |
 
-## 10.1 ADVISORY_NEW (0x0001)
+## ADVISORY_NEW (0x0001)
 
 Registers a new alert origin. Receivers MUST add the entry to their local registry and update their stored registry version to `new_registry_version`. In the case nodes receive a valid ADVISORY_NEW packet that collides with the current registry, nodes MUST drop that packet and refuse update, and SHOULD do a full resync of its local origin registry.
 
-| Offset | Size | Field                | Type   |
-| ------ | ---- | -------------------- | ------ |
-| 0x0A   | 8    | new_registry_version | u64    |
-| 0x12   | 4    | origin_key_id        | u32    |
-| 0x16   | 32   | pubkey_ed25519       | u8[32] |
+| Offset | Size | Field                | Type     |
+| ------ | ---- | -------------------- | -------- |
+| 0x0A   | 8    | new_registry_version | u64      |
+| 0x12   | 4    | origin_key_id        | u32      |
+| 0x16   | 32   | pubkey_ed25519       | `u8[32]` |
 
 Minimum packet size: 8 (prefix) + 2 (kind) + 44 (payload) + 64 (signature) = 118 bytes
 
-## 10.2 ADVISORY_REVOKE (0x0002)
+## ADVISORY_REVOKE (0x0002)
 
 Emergency revocation of a compromised or rogue alert origin. Receivers MUST immediately remove the identified origin from their local registry and reject any further ALERTs signed by it, regardless of signature validity.
 
@@ -485,7 +483,7 @@ This packet SHOULD have URGENT set.
 
 Minimum packet size: 8 + 2 + 12 + 64 = 86 bytes
 
-## 10.3 ADVISORY_RETIRE (0x0003)
+## ADVISORY_RETIRE (0x0003)
 
 Planned decommission of an alert origin. Receivers MUST remove the identified origin from their local registry and update their stored registry version.
 
@@ -498,7 +496,7 @@ Unlike ADVISORY_REVOKE, retirement is planned and does not imply compromise. URG
 
 Minimum packet size: 86 bytes
 
-## 10.4 ADVISORY_UPDATE (0x0004)
+## ADVISORY_UPDATE (0x0004)
 
 Notifies nodes of a scheduled WARN protocol update. This is advisory only — implementations MAY ignore it. It carries no enforcement.
 
@@ -510,7 +508,7 @@ Notifies nodes of a scheduled WARN protocol update. This is advisory only — im
 
 Minimum packet size: 8 + 2 + 10 + 64 = 84 bytes
 
-## 10.5 ADVISORY_REGISTRY_REFRESH (0x0005)
+## ADVISORY_REGISTRY_REFRESH (0x0005)
 
 Signals that the registry has been updated and nodes SHOULD re-sync via the info-plane. Carries the authoritative current registry version so receivers can determine whether they are behind.
 
@@ -522,7 +520,7 @@ Receivers that find their local registry version behind `current_registry_versio
 
 Minimum packet size: 8 + 2 + 8 + 64 = 82 bytes
 
-# 11. Seeding Model
+# Seeding Model
 
 - Alert Origin: signs and issues ALERT packets.
 - Data Relay: receives alerts from Alert Origins and performs first-hop seeding into the mesh.
@@ -534,17 +532,17 @@ Goals:
 
 All alert-plane propagation from Alert Origins MUST pass through at least one Data Relay before reaching leaf clients. General WARN coordination packets MAY originate from any node. Transport-specific seeding rules (relay discovery, registration, forwarding topology) are defined in per-transport specifications. See WARNIP.
 
-# 12. Freshness and Replay Windows
+# Freshness and Replay Windows
 
 REQUIRED cache length:
 
 - Replay cache duration ≥ ttl_s
 
-# 13. Transport Constraints
+# Transport Constraints
 
 Transport-specific constraints such as NAT traversal, port binding, and client keepalive are defined in per-transport specifications.
 
-# 14. Compliance Targets
+# Compliance Targets
 
 ## Relay MUST
 
@@ -562,31 +560,31 @@ Transport-specific constraints such as NAT traversal, port binding, and client k
 - Verify signature
 - Enforce freshness
 
-# 15. Reference Sizes (ALERT, no TLV)
+# Reference Sizes (ALERT, no TLV)
 
 - Common prefix: 8 bytes
 - ALERT fixed fields: 56 bytes
 - Signature block: 68 bytes
 - Total: 132 bytes
 
-# 16. Origin Registry Format
+# Origin Registry Format {#origin-registry-format}
 
 This section defines a simple local file or in-memory region that maps `origin_key_id` → public key.
 
 This file is NOT transmitted on the alert-plane. How it is distributed/updated is out of scope.
 
-## 16.1 Top-Level Structure
+## Top-Level Structure
 
 - `registry_version`: u64, used to manage deltas and versions. The registry version MUST monotonically increase. This MUST match the newest version that the node has obtained, either via a sync or ADVISORY.
 
-## 16.2 Origin Entry
+## Origin Entry
 
 Each entry MUST contain:
 
 - `origin_key_id`: integer (must fit u32)
 - `pubkey`: Raw Ed25519 public key (32 bytes)
 
-## 16.3 Required Receiver Behavior (Authorization)
+## Required Receiver Behavior (Authorization)
 
 Receivers MUST:
 
@@ -594,11 +592,11 @@ Receivers MUST:
 - Verify Ed25519 signature using the registry pubkey.
 - Remove origins immediately upon receiving a valid ADVISORY_REVOKE or ADVISORY_RETIRE signed by the master origin.
 
-# 17. Mesh Isolation
+# Mesh Isolation
 
 Although WARN alerts are made to be usable in any region, nations SHOULD isolate their mesh against potential attacks by neighboring nations via a false alert. In such cases, nations SHOULD compile in their own keys for their nation, and isolate their trust system.
 
-# 18. Transportation and Auxiliary Infrastructure
+# Transportation and Auxiliary Infrastructure
 
 WARN only declares the common protocol which all devices using WARN must be able to parse. Therefore info-plane schemas, key distribution, and propagation will be medium-dependent. There are other specifications that are dependent on the medium, such as IP.
 Other mediums may distribute WARN messages natively with medium-specific framing. The auxiliary data may change, but the WARN packet itself will be preserved.
