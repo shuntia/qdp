@@ -246,85 +246,9 @@ Immediately follows `signed_tlv`:
 
 These list the possible values for fields in WARN ALERT packets. Most fields are designed to reflect CAP.
 For advanced meanings of these values, refer to the OASIS {{CAP}} specs §3.2.2.
+Refer to §9 for the tables.
 
 NOTE: additional `hazard_minor` values are to be determined. Should be able to convert from all preexisting CAP messages which have been produced using this table.
-
-## Hazard Tables
-
-| hazard_major | hazard_minor | Meaning                |
-| ------------ | ------------ | ---------------------- |
-| 0            | 0            | RESERVED (invalid)     |
-| 1            | 0            | Geophysical Unknown    |
-| 1            | 1            | Earthquake             |
-| 1            | 2            | Landslide              |
-| 1            | 3            | Tsunami                |
-| 2            | 0            | Meteorological Unknown |
-| 2            | 1            | Storm                  |
-| 2            | 2            | Flood                  |
-| 3            | 0            | Safety Unknown         |
-| 4            | 0            | Security Unknown       |
-| 4            | 1            | Terrorism              |
-| 4            | 2            | Military Activity      |
-| 5            | 0            | Rescue Unknown         |
-| 6            | 0            | Fire Unknown           |
-| 6            | 1            | Wildfire               |
-| 6            | 2            | City Fire              |
-| 6            | 3            | Prescribed Fire        |
-| 7            | 0            | Health Unknown         |
-| 8            | 0            | Environmental Unknown  |
-| 8            | 1            | Air pollution          |
-| 9            | 0            | Transport Unknown      |
-| 0x0A         | 0            | Infra Unknown          |
-| 0x0B         | 0            | CBRNE Unknown          |
-| 0xFF         | 0            | Other                  |
-
-## Response
-
-| Value | Meaning           |
-| ----- | ----------------- |
-| 0     | RESERVED(invalid) |
-| 1     | All Clear         |
-| 2     | Assess            |
-| 3     | Avoid             |
-| 4     | Evacuate          |
-| 5     | Execute           |
-| 6     | Monitor           |
-| 7     | Prepare           |
-| 8     | Shelter           |
-| 9     | None              |
-
-## Urgency
-
-| Value | Meaning           |
-| ----- | ----------------- |
-| 0     | RESERVED(invalid) |
-| 1     | Expected          |
-| 2     | Future            |
-| 3     | Immediate         |
-| 4     | Past              |
-| 5     | Unknown           |
-
-## Severity
-
-| Value | Meaning           |
-| ----- | ----------------- |
-| 0     | RESERVED(invalid) |
-| 1     | Minor             |
-| 2     | Moderate          |
-| 3     | Severe            |
-| 4     | Extreme           |
-| 5     | Unknown           |
-
-## Certainty
-
-| Value | Meaning           |
-| ----- | ----------------- |
-| 0     | RESERVED(invalid) |
-| 1     | Unlikely          |
-| 2     | Likely            |
-| 3     | Possible          |
-| 4     | Observed          |
-| 5     | Unknown           |
 
 # Event Identity and Updates
 
@@ -424,7 +348,7 @@ The table of reservations for WARN 1.0 is as follows.
 | ------------- | ----------------- |
 | 0x0000        | RESERVED(invalid) |
 | 0x0001-0x00FF | WARN              |
-| 0x0100-0x01FF | WARNIP            |
+| 0x0100-0x01FF | IPWARN            |
 | 0x0200-0xFEFF | Future use        |
 | 0xFF00-0xFFFE | Private use       |
 | 0xFFFF        | RESERVED(invalid) |
@@ -612,4 +536,148 @@ A malicious fleet of relays will be able to effectively do a DoS attack on a rel
 
 # IANA Considerations
 
-This document has no IANA actions.
+IANA will create a new registry group called "WARN." This group includes the "WARN Hazard Codes" "WARN Assigned Ranges" "WARN Advisory Codes" "WARN Response" "WARN Urgency" "WARN Severity" "WARN Certainty" registries described below.
+
+## WARN Hazard Codes
+
+IANA will create the following registry:
+
+Registry Name: WARN Hazard Codes
+
+Registration Procedure: RFC Required
+
+NOTE: The complete values of this table are TBD.
+
+| hazard_major | hazard_minor | Meaning                |
+| ------------ | ------------ | ---------------------- |
+| 0            | 0            | RESERVED (invalid)     |
+| 1            | 0            | Geophysical Unknown    |
+| 1            | 1            | Earthquake             |
+| 1            | 2            | Landslide              |
+| 1            | 3            | Tsunami                |
+| 2            | 0            | Meteorological Unknown |
+| 2            | 1            | Storm                  |
+| 2            | 2            | Flood                  |
+| 3            | 0            | Safety Unknown         |
+| 4            | 0            | Security Unknown       |
+| 4            | 1            | Terrorism              |
+| 4            | 2            | Military Activity      |
+| 5            | 0            | Rescue Unknown         |
+| 6            | 0            | Fire Unknown           |
+| 6            | 1            | Wildfire               |
+| 6            | 2            | City Fire              |
+| 6            | 3            | Prescribed Fire        |
+| 7            | 0            | Health Unknown         |
+| 8            | 0            | Environmental Unknown  |
+| 8            | 1            | Air pollution          |
+| 9            | 0            | Transport Unknown      |
+| 0x0A         | 0            | Infra Unknown          |
+| 0x0B         | 0            | CBRNE Unknown          |
+| 0xFF         | 0            | Other                  |
+
+## WARN Response
+
+IANA will create the following registry:
+
+Registry Name: WARN Response
+
+Registration Procedure: RFC Required
+
+| Value | Meaning           |
+| ----- | ----------------- |
+| 0     | RESERVED(invalid) |
+| 1     | All Clear         |
+| 2     | Assess            |
+| 3     | Avoid             |
+| 4     | Evacuate          |
+| 5     | Execute           |
+| 6     | Monitor           |
+| 7     | Prepare           |
+| 8     | Shelter           |
+| 9     | None              |
+
+## WARN Urgency
+
+IANA will create the following registry:
+
+Registry Name: WARN Urgency
+
+Registration Procedure: RFC Required
+
+| Value | Meaning           |
+| ----- | ----------------- |
+| 0     | RESERVED(invalid) |
+| 1     | Expected          |
+| 2     | Future            |
+| 3     | Immediate         |
+| 4     | Past              |
+| 5     | Unknown           |
+
+## WARN Severity
+
+IANA will create the following registry:
+
+Registry Name: WARN Severity
+
+Registration Procedure: RFC Required
+
+| Value | Meaning           |
+| ----- | ----------------- |
+| 0     | RESERVED(invalid) |
+| 1     | Minor             |
+| 2     | Moderate          |
+| 3     | Severe            |
+| 4     | Extreme           |
+| 5     | Unknown           |
+
+## WARN Certainty
+
+IANA will create the following registry:
+
+Registry Name: WARN Certainty
+
+Registration Procedure: RFC Required
+
+| Value | Meaning           |
+| ----- | ----------------- |
+| 0     | RESERVED(invalid) |
+| 1     | Unlikely          |
+| 2     | Likely            |
+| 3     | Possible          |
+| 4     | Observed          |
+| 5     | Unknown           |
+
+## WARN Reserved Ranges
+
+IANA will create the following registry:
+
+Registry Name: WARN Reserved Ranges
+
+Registration Procedure: RFC Required
+
+| Range/Value   | Category          |
+| ------------- | ----------------- |
+| 0x0000        | RESERVED(invalid) |
+| 0x0001-0x00FF | WARN              |
+| 0x0100-0x01FF | IPWARN            |
+| 0x0200-0xFEFF | Future use        |
+| 0xFF00-0xFFFE | Private use       |
+| 0xFFFF        | RESERVED(invalid) |
+
+## WARN Advisory Codes
+
+
+IANA will create the following registry:
+
+Registry Name: WARN Advisory Codes
+
+Registration Procedure: RFC Required
+
+| Kind   | Name                      |
+| ------ | ------------------------- |
+| 0x0001 | ADVISORY_NEW              |
+| 0x0002 | ADVISORY_REVOKE           |
+| 0x0003 | ADVISORY_RETIRE           |
+| 0x0004 | ADVISORY_UPDATE           |
+| 0x0005 | ADVISORY_REGISTRY_REFRESH |
+
