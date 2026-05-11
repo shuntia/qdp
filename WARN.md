@@ -3,7 +3,7 @@
 title: Wire-format Alerting for Risk Notification
 abbrev: WARN
 docname: draft-koga-warn-00
-date: 2026-04-27
+date: 2026-05-10
 cat: exp
 area: art
 author:
