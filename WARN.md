@@ -9,7 +9,7 @@ area: art
 author:
   - ins: S. Koga
     name: Shunta Koga
-    email: shunta@koga.us
+    email: kogashunta@gmail.com
 informative:
   CAP:
     title: Common Alerting Protocol Version 1.2
@@ -91,7 +91,7 @@ This document defines a protocol aimed to be maximally resilient, distributed, a
   - No required allocation
 
 - MTU safety
-  - Recommended UDP payload ≤ 1200 bytes
+  - Recommended UDP payload <= 1200 bytes
 
 - Lightweight
   - Be able to run on minimal hardware
@@ -135,15 +135,15 @@ Latitude and longitude are signed `i32` in 100-nanodegree units (1e-7 degrees).
 
 Ranges:
 
-- latitude: −900_000_000 … +900_000_000
-- longitude: −1_800_000_000 … +1_800_000_000
+- latitude: -900_000_000 ... +900_000_000
+- longitude: -1_800_000_000 ... +1_800_000_000
 
 ## Distance
 
 Distance is encoded as 10-meter units:
 
 - Stored value: `radius_10m` (`u16`)
-- Real meters: `affected_radius_m = radius_10m × 10`
+- Real meters: `affected_radius_m = radius_10m x 10`
 - Used for propagation decisions (see {{geographic-bounding}})
 - A value of 0 indicates "unknown" or "see polygon TLV"
 
@@ -162,14 +162,14 @@ Total size: 8 bytes
 | Offset | Size | Field         | Type    | Description               |
 | ------ | ---- | ------------- | ------- | ------------------------- |
 | 0x00   | 4    | magic         | `u8[4]` | ASCII "WARN"              |
-| 0x04   | 1    | version_major | u8      | v1.0 → 1                  |
-| 0x05   | 1    | version_minor | u8      | v1.0 → 0                  |
+| 0x04   | 1    | version_major | u8      | v1.0 -> 1                  |
+| 0x05   | 1    | version_minor | u8      | v1.0 -> 0                  |
 | 0x06   | 2    | flags         | u16     | See {{flags}}             |
-| 0x08   | …    | payload       | -       | ALERT or non-ALERT fields |
+| 0x08   | ...    | payload       | -       | ALERT or non-ALERT fields |
 
 Notes:
 
-- The signed region is `[0x00, packet_len − 64)` for signed packets.
+- The signed region is `[0x00, packet_len - 64)` for signed packets.
 - The signature is always the last 64 bytes of signed packets.
 
 # Flags {#flags}
@@ -183,7 +183,7 @@ Bit numbering: Bit 0 is the most significant bit (MSB).
 | 2    | UPDATE   | Revision of existing event                 |
 | 3    | CANCEL   | Cancels an existing event                  |
 | 4    | TEST     | Test alert                                 |
-| 5–15 | RESERVED | Unused in v1; MUST be ignored by receivers |
+| 5-15 | RESERVED | Unused in v1; MUST be ignored by receivers |
 
 # ALERT Packet
 
@@ -225,8 +225,8 @@ Deriving signed_tlv bounds:
 The signed TLV block has no explicit length field. Bounds are derived from the transport-provided packet length:
 
 - `signed_tlv` starts at offset `0x40`
-- `signed_tlv` ends at `packet_len − 68` (68 = 4 origin_key_id + 64 signature)
-- Receivers MUST validate: `packet_len ≥ 0x40 + 68` (i.e., `packet_len ≥ 132`)
+- `signed_tlv` ends at `packet_len - 68` (68 = 4 origin_key_id + 64 signature)
+- Receivers MUST validate: `packet_len >= 0x40 + 68` (i.e., `packet_len >= 132`)
 
 ## Signature Block
 
@@ -238,15 +238,15 @@ Immediately follows `signed_tlv`:
 | signature     | 64   | Ed25519 signature                                                              |
 
 - Algorithm: Ed25519 {{RFC8032}} (required)
-- Signed region: `[0x00, packet_len − 64)` — covers Common Prefix + ALERT fields + signed_tlv + origin_key_id.
+- Signed region: `[0x00, packet_len - 64)`(covers Common Prefix + ALERT fields + signed_tlv + origin_key_id).
 - Receivers MUST resolve `origin_key_id` via the Origin Registry and reject if not present.
 - Receivers MUST verify the signature before acting on any ALERT field.
 
 # Value Tables {#value-tables}
 
 These list the possible values for fields in WARN ALERT packets. Most fields are designed to reflect CAP.
-For advanced meanings of these values, refer to the OASIS {{CAP}} specs §3.2.2.
-Refer to §9 for the tables.
+For advanced meanings of these values, refer to the OASIS {{CAP}} specs Section 3.2.2.
+Refer to Section 9 for the tables.
 
 NOTE: additional `hazard_minor` values are to be determined. Should be able to convert from all preexisting CAP messages which have been produced using this table.
 
@@ -258,13 +258,13 @@ NOTE: additional `hazard_minor` values are to be determined. Should be able to c
 
 Receiver rules:
 
-- seq < highest_seen → drop
-- seq == highest_seen → drop duplicate
-- seq > highest_seen → accept update, advance highest_seen
+- seq < highest_seen -> drop
+- seq == highest_seen -> drop duplicate
+- seq > highest_seen -> accept update, advance highest_seen
 
 Deduplication state per event:
 
-    (origin_key_id, event_id) → highest_seq: u16
+    (origin_key_id, event_id) -> highest_seq: u16
 
 ## CANCEL Semantics
 
@@ -306,12 +306,12 @@ The `ttl_s` field represents how many seconds the packet is permitted to spread.
 
 Conceptual rule:
 
-    age_s = now_s − timestamp_s
-    if age_s > ttl_s → SHOULD NOT forward
+    age_s = now_s - timestamp_s
+    if age_s > ttl_s -> SHOULD NOT forward
 
 ## Geographic Bounding {#geographic-bounding}
 
-- Relays SHOULD drop packets outside `radius_10m × 10` meters.
+- Relays SHOULD drop packets outside `radius_10m x 10` meters.
   - If a relay does not know its own location, it MUST propagate.
 
 ## Forwarding Strategy
@@ -334,7 +334,7 @@ Under any of the conditions specified below, alerts MAY be propagated regardless
 | Offset | Size | Field           | Type |
 | ------ | ---- | --------------- | ---- |
 | 0x08   | 2    | kind            | u16  |
-| 0x0A   | …    | general payload | -    |
+| 0x0A   | ...    | general payload | -    |
 
 The `kind` field identifies the packet type. All non-ALERT packets share this header immediately after the Common Prefix.
 
@@ -359,7 +359,7 @@ All ADVISORY packets MUST be signed by the master origin key. Signing is determi
 
 Receivers MUST:
 
-- Verify the Ed25519 signature over the signed region `[0x00, packet_len − 64)` if they exist.
+- Verify the Ed25519 signature over the signed region `[0x00, packet_len - 64)` if they exist.
 - Drop the packet if verification fails.
 - Drop the packet if `kind` is unknown.
 - Drop the packet if `new_registry_version` is less than or equal to its own registry's version.
@@ -370,7 +370,7 @@ Immediately follows the kind-specific payload:
 
 | Field     | Size | Description                                      |
 | --------- | ---- | ------------------------------------------------ |
-| signature | 64   | Ed25519 signature over `[0x00, packet_len − 64)` |
+| signature | 64   | Ed25519 signature over `[0x00, packet_len - 64)` |
 
 ## Advisory Kind Assignments
 
@@ -422,7 +422,7 @@ Minimum packet size: 86 bytes
 
 ## ADVISORY_UPDATE (0x0004)
 
-Notifies nodes of a scheduled WARN protocol update. This is advisory only — implementations MAY ignore it. It carries no enforcement.
+Notifies nodes of a scheduled WARN protocol update. Implementations MAY ignore it. It carries no enforcement.
 
 | Offset | Size | Field              | Type |
 | ------ | ---- | ------------------ | ---- |
@@ -452,7 +452,7 @@ Minimum packet size: 8 + 2 + 8 + 64 = 82 bytes
 Goals:
 
 - Multiple independent entry points into the mesh
-- Delivery over precision — best-effort propagation is preferred over guaranteed delivery
+- Delivery over precision
 
 All alert-plane propagation from Alert Origins MUST pass through at least one Data Relay before reaching leaf clients. General WARN coordination packets MAY originate from any node. Transport-specific seeding rules (relay discovery, registration, forwarding topology) are defined in per-transport specifications. See WARNIP.
 
@@ -460,7 +460,7 @@ All alert-plane propagation from Alert Origins MUST pass through at least one Da
 
 REQUIRED cache length:
 
-- Replay cache duration ≥ ttl_s
+- Replay cache duration >= ttl_s
 
 # Transport Constraints
 
@@ -493,7 +493,7 @@ Transport-specific constraints such as NAT traversal, port binding, and client k
 
 # Origin Registry Format {#origin-registry-format}
 
-This section defines a simple local file or in-memory region that maps `origin_key_id` → public key.
+This section defines a simple local file or in-memory region that maps `origin_key_id` -> public key.
 
 This file is NOT transmitted on the alert-plane. How it is distributed/updated is out of scope.
 
